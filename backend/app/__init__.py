@@ -1,0 +1,2 @@
+"""Crewboard application package."""
+

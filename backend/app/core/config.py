@@ -1,10 +1,12 @@
 """Core application configuration."""
 
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
+
     API_V1_STR: str = "/api"
     PROJECT_NAME: str = "Crewboard"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
@@ -22,10 +24,21 @@ class Settings(BaseSettings):
         "postgresql+psycopg2://crewboard_user:crewboard_secure_password@localhost:5432/crewboard",
     )
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    def validate_production_security(self) -> None:
+        """Enforce strong JWT secret in production environments."""
+        placeholder_secrets = {
+            "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
+            "CHANGE_ME_GENERATE_A_RANDOM_SECRET",
+            "secret",
+            "changeme",
+        }
+        if self.ENVIRONMENT == "production":
+            if not self.SECRET_KEY or self.SECRET_KEY in placeholder_secrets or len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    "CRITICAL SECURITY ERROR: A secure, non-default SECRET_KEY with at least "
+                    "32 characters must be configured in production."
+                )
 
 
 settings = Settings()
-
+settings.validate_production_security()

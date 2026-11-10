@@ -5,6 +5,8 @@ Crewboard Backend Application Entrypoint
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import api_router
+
 app = FastAPI(
     title="Crewboard API",
     description="Student team project management and contribution tracking platform",
@@ -33,3 +35,6 @@ def health_check():
         "version": "0.1.0",
     }
 
+
+# Include all domain API routers under /api prefix
+app.include_router(api_router, prefix="/api")

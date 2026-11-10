@@ -24,6 +24,19 @@ class Settings(BaseSettings):
         "postgresql+psycopg2://crewboard_user:crewboard_secure_password@localhost:5432/crewboard",
     )
 
+    # CORS
+    CORS_ORIGINS: str = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parsed list of allowed CORS origins without wildcards."""
+        if not self.CORS_ORIGINS:
+            return []
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     def validate_production_security(self) -> None:
         """Enforce strong JWT secret in production environments."""
         placeholder_secrets = {

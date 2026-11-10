@@ -1,11 +1,9 @@
 #!/bin/sh
 set -e
 
-# Execute database migrations if configured
+# Execute database migrations
 echo "Applying database migrations via Alembic..."
-alembic upgrade head || {
-    echo "Warning: Alembic migration execution skipped or failed."
-}
+alembic upgrade head
 
 # Execute main container command (uvicorn)
 exec "$@"

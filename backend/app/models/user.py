@@ -16,6 +16,7 @@ class User(Base):
     full_name = Column(String(100), nullable=False)
     email = Column(String(255), nullable=False, unique=True, index=True)
     hashed_password = Column(String(255), nullable=False)
+    system_role = Column(String(20), nullable=False, default="student")
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

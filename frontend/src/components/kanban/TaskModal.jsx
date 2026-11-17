@@ -20,6 +20,7 @@ export default function TaskModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
+  const [reviewerId, setReviewerId] = useState('');
   const [priority, setPriority] = useState('medium');
   const [status, setStatus] = useState(initialStatus);
   const [deadline, setDeadline] = useState('');
@@ -33,6 +34,7 @@ export default function TaskModal({
       setTitle(taskToEdit.title || '');
       setDescription(taskToEdit.description || '');
       setAssignedTo(taskToEdit.assigned_to || '');
+      setReviewerId(taskToEdit.reviewer_id || '');
       setPriority(taskToEdit.priority || 'medium');
       setStatus(taskToEdit.status || 'todo');
       setDeadline(taskToEdit.deadline || '');
@@ -40,6 +42,7 @@ export default function TaskModal({
       setTitle('');
       setDescription('');
       setAssignedTo('');
+      setReviewerId('');
       setPriority('medium');
       setStatus(initialStatus || 'todo');
       setDeadline('');
@@ -63,6 +66,7 @@ export default function TaskModal({
           title: title.trim(),
           description: description.trim() || null,
           assigned_to: assignedTo || null,
+          reviewer_id: reviewerId || null,
           priority,
           status,
           deadline: deadline || null,
@@ -76,6 +80,7 @@ export default function TaskModal({
           title: title.trim(),
           description: description.trim() || null,
           assigned_to: assignedTo || null,
+          reviewer_id: reviewerId || null,
           priority,
           status,
           deadline: deadline || null,
@@ -106,7 +111,6 @@ export default function TaskModal({
   const statusOptions = [
     { value: 'todo', label: 'To Do' },
     { value: 'in_progress', label: 'In Progress' },
-    { value: 'done', label: 'Done' },
   ];
 
   return (
@@ -166,6 +170,17 @@ export default function TaskModal({
           />
 
           <Select
+            id="task-reviewer"
+            label="Designated Reviewer"
+            value={reviewerId}
+            onChange={(e) => setReviewerId(e.target.value)}
+            options={memberOptions}
+            placeholder="Default: Team Leader"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Select
             id="task-priority"
             label="Priority Level"
             value={priority}
@@ -173,9 +188,7 @@ export default function TaskModal({
             options={priorityOptions}
             placeholder=""
           />
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
             id="task-deadline"
             label="Due Date"
@@ -184,7 +197,9 @@ export default function TaskModal({
             onChange={(e) => setDeadline(e.target.value)}
             icon={Calendar}
           />
+        </div>
 
+        <div>
           <Select
             id="task-status"
             label="Workflow Status"

@@ -12,15 +12,15 @@ export default function JoinCodeCard({ team }) {
   }
 
   return (
-    <div className="bg-crew-surface border border-crew-border rounded-lg p-5 shadow-card space-y-3">
+    <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <KeyRound className="w-4 h-4 text-crew-action" />
+          <KeyRound className="w-4 h-4 text-crew-text-secondary" />
           <h3 className="font-heading font-bold text-sm text-crew-text-primary tracking-tight">
             Team Join Code
           </h3>
         </div>
-        <span className="text-[11px] font-semibold text-crew-warning bg-crew-sand/20 px-2 py-0.5 rounded border border-crew-sand/30">
+        <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/80 dark:border-amber-800/40">
           6–8 Chars
         </span>
       </div>
@@ -31,17 +31,17 @@ export default function JoinCodeCard({ team }) {
       </p>
 
       <div className="flex items-center gap-2 pt-1">
-        <div className="flex-1 bg-crew-bg border border-crew-border rounded px-4 py-2.5 font-mono font-bold text-base tracking-widest text-crew-text-primary text-center select-all">
+        <div className="flex-1 bg-crew-bg border border-crew-border rounded-xl px-4 py-2 font-mono font-bold text-base tracking-widest text-crew-text-primary text-center select-all">
           {team?.join_code || 'CREW-CODE'}
         </div>
         <button
           type="button"
           onClick={handleCopy}
-          className="px-4 py-2.5 rounded bg-crew-action text-crew-surface hover:bg-crew-action-hover font-medium text-xs flex items-center gap-1.5 transition-colors shadow-subtle focus:outline-none focus:ring-2 focus:ring-crew-action"
+          className="px-4 py-2 rounded-xl bg-[#181B20] text-white hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-subtle focus:outline-none"
         >
           {copied ? (
             <>
-              <Check className="w-4 h-4 text-crew-surface" />
+              <Check className="w-4 h-4" />
               <span>Copied!</span>
             </>
           ) : (

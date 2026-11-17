@@ -12,18 +12,18 @@ export default function WorkloadDistribution({ workload = [] }) {
     );
   }
 
-  // Pre-selected colors from the Warm Editorial palette
+  // Coordinated Cool Neutral palette
   const segmentColors = [
     'bg-crew-action',
-    'bg-crew-terracotta',
-    'bg-crew-sand',
+    'bg-crew-warning',
     'bg-crew-info',
-    'bg-[#8C6D58]',
-    'bg-[#5F7D6D]',
+    'bg-crew-success',
+    'bg-[#737E8B]',
+    'bg-[#6885A5]',
   ];
 
   return (
-    <div className="bg-crew-surface border border-crew-border rounded-lg p-5 shadow-card space-y-5">
+    <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle space-y-5">
       <div className="flex items-center justify-between pb-3 border-b border-crew-border/60">
         <div>
           <h3 className="font-heading font-bold text-sm text-crew-text-primary tracking-tight flex items-center gap-2">

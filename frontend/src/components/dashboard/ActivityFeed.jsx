@@ -13,7 +13,7 @@ import {
 export default function ActivityFeed({ activities = [], loading = false }) {
   if (loading) {
     return (
-      <div className="bg-crew-surface border border-crew-border rounded-lg p-5 shadow-card space-y-4">
+      <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle space-y-4">
         <div className="h-4 bg-crew-border/40 rounded w-1/3 animate-pulse" />
         <div className="space-y-3">
           {[1, 2, 3, 4].map((n) => (
@@ -32,8 +32,8 @@ export default function ActivityFeed({ activities = [], loading = false }) {
 
   if (activities.length === 0) {
     return (
-      <div className="bg-crew-surface border border-crew-border rounded-lg p-6 shadow-card text-center text-xs text-crew-text-secondary">
-        <History className="w-6 h-6 text-crew-sand mx-auto mb-2" />
+      <div className="bg-crew-surface border border-crew-border rounded-2xl p-6 shadow-subtle text-center text-xs text-crew-text-secondary">
+        <History className="w-6 h-6 text-crew-text-tertiary mx-auto mb-2" />
         <p className="font-semibold text-crew-text-primary text-sm">No activity logged yet</p>
         <p className="mt-1">Actions on tasks and projects will automatically show up here.</p>
       </div>
@@ -43,69 +43,68 @@ export default function ActivityFeed({ activities = [], loading = false }) {
   function getActionIcon(action) {
     switch (action) {
       case 'task_created':
-        return <FolderPlus className="w-3.5 h-3.5 text-crew-action" />;
+        return <FolderPlus className="w-3.5 h-3.5 text-sky-600" />;
       case 'status_changed':
-        return <CheckCircle2 className="w-3.5 h-3.5 text-crew-terracotta" />;
+        return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />;
       case 'task_assigned':
-        return <UserCheck className="w-3.5 h-3.5 text-crew-info" />;
+        return <UserCheck className="w-3.5 h-3.5 text-purple-600" />;
       case 'priority_changed':
-        return <AlertCircle className="w-3.5 h-3.5 text-crew-warning" />;
+        return <AlertCircle className="w-3.5 h-3.5 text-amber-600" />;
       case 'deadline_changed':
-        return <Calendar className="w-3.5 h-3.5 text-crew-sand" />;
+        return <Calendar className="w-3.5 h-3.5 text-amber-600" />;
       case 'project_created':
-        return <FolderPlus className="w-3.5 h-3.5 text-crew-action" />;
+        return <FolderPlus className="w-3.5 h-3.5 text-sky-600" />;
       default:
         return <ArrowRightLeft className="w-3.5 h-3.5 text-crew-text-secondary" />;
     }
   }
 
   return (
-    <div className="bg-crew-surface border border-crew-border rounded-lg p-5 shadow-card">
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-crew-border/60">
-        <h3 className="font-heading font-bold text-sm text-crew-text-primary tracking-tight flex items-center gap-2">
-          <History className="w-4 h-4 text-crew-action" />
-          Recent Team Activity
+    <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle space-y-3">
+      <div className="flex items-center justify-between pb-2 border-b border-crew-border/60">
+        <h3 className="font-heading font-semibold text-xs uppercase tracking-wider text-crew-text-primary flex items-center gap-1.5">
+          <History className="w-3.5 h-3.5 text-crew-text-tertiary" />
+          <span>Recent Team Activity</span>
         </h3>
-        <span className="text-[11px] text-crew-text-secondary">Live Audit</span>
+        <span className="text-[10px] text-crew-text-tertiary font-mono">Live Audit</span>
       </div>
 
-      <div className="flow-root">
-        <ul className="-mb-4 space-y-4">
-          {activities.map((activity, idx) => {
-            const formatted = formatActivityText(activity);
-            const isLast = idx === activities.length - 1;
+      <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+        {activities.map((act) => {
+          const item = formatActivityText(act);
+          const meta = typeof item === 'object' && item !== null ? item : {};
+          const actorName = act.user_name || meta.actor || 'Teammate';
+          const shortActor = actorName.split(' ')[0];
 
-            return (
-              <li key={activity.id || idx} className="relative flex gap-3 text-xs">
-                {!isLast && (
-                  <span
-                    className="absolute top-5 left-3.5 -ml-px h-full w-0.5 bg-crew-border/60"
-                    aria-hidden="true"
-                  />
-                )}
+          return (
+            <div key={act.id} className="flex items-start gap-2.5 text-xs">
+              <div className="w-6 h-6 rounded-full bg-crew-bg border border-crew-border flex items-center justify-center font-heading font-bold text-[9px] text-crew-text-secondary flex-shrink-0 mt-0.5">
+                {getInitials(act.user_name || meta.actor)}
+              </div>
 
-                <div className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-crew-bg border border-crew-border text-crew-text-primary font-heading font-semibold text-[11px]">
-                  {getInitials(activity.user_name)}
+              <div className="flex-1 min-w-0">
+                <p className="text-crew-text-secondary leading-snug">
+                  <span className="font-semibold text-crew-text-primary">
+                    {shortActor}
+                  </span>{' '}
+                  <span>{meta.action || 'updated'}</span>{' '}
+                  {meta.target && (
+                    <span className="font-medium text-crew-text-primary">
+                      {meta.target}
+                    </span>
+                  )}
+                  {meta.detail && (
+                    <span className="text-crew-text-secondary"> {meta.detail}</span>
+                  )}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-crew-text-tertiary font-mono">
+                  {getActionIcon(act.action)}
+                  <span>{formatRelativeTime(act.created_at)}</span>
                 </div>
-
-                <div className="flex-1 min-w-0 pt-0.5">
-                  <p className="text-crew-text-primary leading-snug">
-                    <span className="font-semibold">{formatted.actor}</span>{' '}
-                    <span className="text-crew-text-secondary">{formatted.action}</span>{' '}
-                    <span className="font-medium text-crew-text-primary">{formatted.target}</span>{' '}
-                    {formatted.detail && (
-                      <span className="text-crew-text-secondary">{formatted.detail}</span>
-                    )}
-                  </p>
-                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-crew-text-secondary/80">
-                    {getActionIcon(activity.action)}
-                    <span>{formatRelativeTime(activity.created_at)}</span>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

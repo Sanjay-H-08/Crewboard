@@ -32,6 +32,12 @@ class Task(Base):
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    reviewer_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status = Column(String(20), nullable=False, default="todo", index=True)
     priority = Column(String(20), nullable=False, default="medium")
     deadline = Column(Date, nullable=True, index=True)
@@ -51,4 +57,11 @@ class Task(Base):
     project = relationship("Project", back_populates="tasks")
     assignee = relationship("User", foreign_keys=[assigned_to], back_populates="tasks_assigned")
     creator = relationship("User", foreign_keys=[created_by])
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+    submissions = relationship(
+        "TaskSubmission",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskSubmission.version.desc()",
+    )
     activity_logs = relationship("ActivityLog", back_populates="task")

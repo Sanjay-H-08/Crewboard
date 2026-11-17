@@ -152,3 +152,92 @@ def test_production_security_validation():
     s_good = Settings(ENVIRONMENT="production", SECRET_KEY="a" * 32)
     s_good.validate_production_security()
 
+
+def test_login_handles_incompatible_or_corrupt_hash_safely(client, db):
+    """Verify login with legacy/corrupt/unknown hash formats returns 401 instead of crashing with HTTP 500."""
+    from app.models.user import User
+
+    # Create user with an incompatible or legacy hash string (e.g. bcrypt or raw plaintext)
+    legacy_user = User(
+        full_name="Legacy User",
+        email="legacy.hash@university.edu",
+        hashed_password="$2b$12$e8O6nU8Yn27s7aG47d/1e.e8O6nU8Yn27s7aG47d/1e.e8O6nU8Yn",
+    )
+    db.add(legacy_user)
+    db.commit()
+
+    res = client.post(
+        "/api/auth/login",
+        json={"email": "legacy.hash@university.edu", "password": "AnyPassword123!"},
+    )
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Incorrect email or password."
+
+
+def test_registration_integrity_error_rollback(client, db):
+    """Verify concurrent or unhandled DB constraint failures roll back and return 400."""
+    from unittest.mock import patch
+    from sqlalchemy.exc import IntegrityError
+
+    with patch.object(db, "commit", side_effect=IntegrityError("duplicate", {}, Exception())):
+        res = client.post(
+            "/api/auth/register",
+            json={
+                "full_name": "Conflict User",
+                "email": "conflict.test@university.edu",
+                "password": "ValidPassword123!",
+            },
+        )
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Email already registered."
+
+
+def test_public_registration_cannot_register_as_teacher(client, db):
+    """Test 1: Verify anonymous users cannot register as teachers even if submitting role: 'teacher'."""
+    from app.models.user import User
+
+    res = client.post(
+        "/api/auth/register",
+        json={
+            "full_name": "Infiltrator",
+            "email": "infiltrator@university.edu",
+            "password": "Password123!",
+            "role": "teacher",
+        },
+    )
+    assert res.status_code == 201
+    user_data = res.json()
+    assert user_data["system_role"] == "student"
+
+    # Query directly from DB
+    db_user = db.query(User).filter(User.email == "infiltrator@university.edu").first()
+    assert db_user is not None
+    assert db_user.system_role == "student"
+
+
+def test_administrative_cli_provision_teacher(db):
+    """Verify backend-controlled administrative provisioning promotes user to teacher."""
+    from app.cli.provision_teacher import provision_teacher
+    from app.models.user import User
+
+    # Provision brand new teacher
+    provision_teacher("prof.jones@university.edu", "Prof. Indiana Jones", "SecretPass123!", db=db)
+    user = db.query(User).filter(User.email == "prof.jones@university.edu").first()
+    assert user is not None
+    assert user.system_role == "teacher"
+
+    # Promote existing student user to teacher
+    student = User(
+        full_name="Student Promoted",
+        email="promoted@university.edu",
+        hashed_password="hash",
+        system_role="student",
+    )
+    db.add(student)
+    db.commit()
+
+    provision_teacher("promoted@university.edu", db=db)
+    db.refresh(student)
+    assert student.system_role == "teacher"
+
+

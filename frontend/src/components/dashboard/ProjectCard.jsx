@@ -16,19 +16,19 @@ export default function ProjectCard({ project }) {
     new Date(`${project.deadline}T00:00:00`) < new Date(new Date().setHours(0, 0, 0, 0));
 
   return (
-    <div className="bg-crew-surface border border-crew-border rounded-lg p-5 shadow-card hover:border-crew-sand transition-all duration-150 flex flex-col justify-between group">
+    <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle hover:shadow-card hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150 flex flex-col justify-between group">
       <div>
         <div className="flex items-start justify-between gap-3 mb-2">
-          <h3 className="font-heading font-bold text-base text-crew-text-primary group-hover:text-crew-action transition-colors tracking-tight line-clamp-1">
+          <h3 className="font-heading font-bold text-base text-crew-text-primary group-hover:text-black dark:group-hover:text-white transition-colors tracking-tight line-clamp-1">
             {project.name}
           </h3>
           <span
-            className={`text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-sm border ${
+            className={`text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
               project.status === 'completed'
-                ? 'bg-crew-success/10 text-crew-success border-crew-success/20'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/80 dark:border-emerald-800/40'
                 : project.status === 'planning'
-                ? 'bg-crew-info/10 text-crew-info border-crew-info/20'
-                : 'bg-crew-sand/20 text-crew-warning border-crew-sand/30'
+                ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/40'
+                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/80 dark:border-amber-800/40'
             }`}
           >
             {project.status || 'Active'}
@@ -42,11 +42,11 @@ export default function ProjectCard({ project }) {
         {/* Deadline */}
         <div className="flex items-center gap-1.5 text-xs mb-4">
           <Calendar
-            className={`w-3.5 h-3.5 ${isPastDeadline ? 'text-crew-danger' : 'text-crew-text-secondary'}`}
+            className={`w-3.5 h-3.5 ${isPastDeadline ? 'text-rose-600' : 'text-crew-text-tertiary'}`}
           />
           <span
             className={`font-medium ${
-              isPastDeadline ? 'text-crew-danger font-semibold' : 'text-crew-text-secondary'
+              isPastDeadline ? 'text-rose-600 font-semibold' : 'text-crew-text-secondary'
             }`}
           >
             {isPastDeadline ? `Deadline passed: ${formatDate(project.deadline)}` : formatDate(project.deadline)}
@@ -58,30 +58,27 @@ export default function ProjectCard({ project }) {
         {/* Progress bar */}
         <div className="space-y-1.5 pt-3 border-t border-crew-border/60">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-crew-text-secondary font-medium">Deliverables</span>
-            <span className="font-heading font-semibold text-crew-text-primary">
-              {completed}/{total} tasks ({percentage}%)
+            <span className="text-crew-text-secondary">Deliverables</span>
+            <span className="font-mono text-crew-text-primary font-medium">
+              {completed}/{total} ({percentage}%)
             </span>
           </div>
-
-          <div className="w-full h-2 rounded-full bg-crew-bg overflow-hidden">
+          <div className="w-full h-1.5 rounded-full bg-crew-bg border border-crew-border/60 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-300 ${
-                percentage === 100 ? 'bg-crew-success' : 'bg-crew-action'
-              }`}
+              className="h-full rounded-full bg-[#181B20] dark:bg-white transition-all duration-300"
               style={{ width: `${percentage}%` }}
             />
           </div>
         </div>
 
         {/* Action Link */}
-        <div className="pt-4 flex items-center justify-end">
+        <div className="mt-4 flex justify-end">
           <Link
             to={`/projects/${project.id}`}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-crew-action hover:text-crew-action-hover group-hover:translate-x-0.5 transition-all"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-crew-text-primary hover:text-black dark:hover:text-white transition-colors"
           >
-            Open Workspace
-            <ArrowRight className="w-3.5 h-3.5" />
+            <span>Open Workspace</span>
+            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import re
+from typing import Literal
 import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -26,6 +27,7 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     full_name: str
     email: str
+    system_role: str = "student"
     created_at: datetime
 
 

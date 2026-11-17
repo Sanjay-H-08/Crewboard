@@ -20,7 +20,7 @@ export default function MemberTable({ members = [], workload = [] }) {
   }
 
   return (
-    <div className="bg-crew-surface border border-crew-border rounded-lg shadow-card overflow-hidden">
+    <div className="bg-crew-surface border border-crew-border rounded-2xl shadow-subtle overflow-hidden">
       <div className="p-4 sm:p-5 border-b border-crew-border/60 flex items-center justify-between">
         <div>
           <h3 className="font-heading font-bold text-sm text-crew-text-primary tracking-tight">
@@ -30,7 +30,7 @@ export default function MemberTable({ members = [], workload = [] }) {
             Verified members and their deliverable completion records
           </p>
         </div>
-        <span className="text-xs font-semibold px-2.5 py-1 rounded bg-crew-bg border border-crew-border text-crew-text-secondary">
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-crew-bg border border-crew-border text-crew-text-secondary">
           {members.length} Teammates
         </span>
       </div>
@@ -81,15 +81,15 @@ export default function MemberTable({ members = [], workload = [] }) {
                     {formatDate(member.joined_at)}
                   </td>
 
-                  <td className="py-3 px-4 text-center font-heading font-medium text-crew-text-primary">
+                  <td className="py-3 px-4 text-center font-mono font-medium text-crew-text-primary">
                     {assigned}
                   </td>
 
-                  <td className="py-3 px-4 text-center font-heading font-medium text-crew-success">
+                  <td className="py-3 px-4 text-center font-mono font-medium text-crew-success">
                     {completed}
                   </td>
 
-                  <td className="py-3 px-4 text-right font-heading font-semibold text-crew-text-primary">
+                  <td className="py-3 px-4 text-right font-mono font-semibold text-crew-text-primary">
                     {share}
                   </td>
                 </tr>

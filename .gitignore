@@ -60,8 +60,18 @@ pnpm-debug.log*
 # Database & Persistent Volumes
 *.sqlite3
 *.db
+*.sql
+*.sql.gz
+*.dump
+backups/
 postgres-data/
 crewboard_pgdata/
+
+# Uploads & User Deliverables (Preserved locally and in Docker volume, excluded from Git)
+uploads/
+backend/uploads/
+crewboard_uploads/
+scratch/
 
 # IDE, Editors & OS Files
 .idea/

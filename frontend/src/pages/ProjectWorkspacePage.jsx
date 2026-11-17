@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useTeam } from '../context/TeamContext';
 import { projectsService, tasksService, teamsService, formatApiError } from '../services/api';
 import { formatDate, isTaskOverdue } from '../utils/formatters';
 import KanbanColumn from '../components/kanban/KanbanColumn';
 import TaskModal from '../components/kanban/TaskModal';
+import SubmissionModal from '../components/kanban/SubmissionModal';
+import ReviewModal from '../components/kanban/ReviewModal';
 import FilterBar from '../components/kanban/FilterBar';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -19,6 +23,11 @@ import {
 export default function ProjectWorkspacePage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user, isTeacher } = useAuth();
+  const { activeTeam } = useTeam();
+
+  const isLeader = activeTeam?.role === 'owner' || activeTeam?.role === 'leader';
+  const isLeaderOrTeacher = isLeader || isTeacher;
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -34,6 +43,12 @@ export default function ProjectWorkspacePage() {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [targetColumnStatus, setTargetColumnStatus] = useState('todo');
+
+  const [submissionModalOpen, setSubmissionModalOpen] = useState(false);
+  const [taskToSubmit, setTaskToSubmit] = useState(null);
+
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [taskToReview, setTaskToReview] = useState(null);
 
   // Loading & error states
   const [loading, setLoading] = useState(true);
@@ -101,6 +116,18 @@ export default function ProjectWorkspacePage() {
     setTaskModalOpen(true);
   }
 
+  // Open modal for task submission
+  function handleOpenSubmit(task) {
+    setTaskToSubmit(task);
+    setSubmissionModalOpen(true);
+  }
+
+  // Open modal for task review
+  function handleOpenReview(task) {
+    setTaskToReview(task);
+    setReviewModalOpen(true);
+  }
+
   // Task saved callback (create or edit)
   function handleTaskSaved(savedTask) {
     setTasks((prev) => {
@@ -113,6 +140,33 @@ export default function ProjectWorkspacePage() {
       return [savedTask, ...prev];
     });
     triggerFeedback(taskToEdit ? 'Task updated successfully.' : 'New task created.');
+  }
+
+  // Deliverable submitted callback
+  async function handleTaskSubmitted(submission) {
+    if (taskToSubmit) {
+      try {
+        const refreshed = await tasksService.get(taskToSubmit.id);
+        handleTaskSaved(refreshed);
+      } catch {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === taskToSubmit.id
+              ? { ...t, status: 'submitted', latest_submission: submission }
+              : t,
+          ),
+        );
+      }
+      triggerFeedback('Deliverable successfully submitted for review.');
+    }
+    setSubmissionModalOpen(false);
+  }
+
+  // Deliverable reviewed callback
+  function handleTaskReviewed(updatedTask) {
+    handleTaskSaved(updatedTask);
+    triggerFeedback(`Evaluation recorded: ${updatedTask.status.replace('_', ' ')}.`);
+    setReviewModalOpen(false);
   }
 
   // Filter tasks locally based on search, status, priority, and assignee
@@ -149,13 +203,21 @@ export default function ProjectWorkspacePage() {
     });
   }, [tasks, searchQuery, statusFilter, priorityFilter, assigneeFilter]);
 
-  // Group filtered tasks into columns
+  // Group filtered tasks into 5 workflow columns
   const todoTasks = useMemo(
     () => filteredTasks.filter((t) => t.status === 'todo'),
     [filteredTasks],
   );
   const inProgressTasks = useMemo(
     () => filteredTasks.filter((t) => t.status === 'in_progress'),
+    [filteredTasks],
+  );
+  const submittedTasks = useMemo(
+    () => filteredTasks.filter((t) => t.status === 'submitted'),
+    [filteredTasks],
+  );
+  const changesRequestedTasks = useMemo(
+    () => filteredTasks.filter((t) => t.status === 'changes_requested'),
     [filteredTasks],
   );
   const doneTasks = useMemo(
@@ -190,46 +252,49 @@ export default function ProjectWorkspacePage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb & Navigation Bar */}
+      {/* Breadcrumb Navigation matching Reference Image 1 */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-xs text-crew-text-secondary">
-          <Link to="/dashboard" className="hover:text-crew-text-primary flex items-center gap-1 font-medium">
+        <div className="flex items-center gap-1.5 text-xs text-crew-text-tertiary">
+          <Link to="/dashboard" className="hover:text-crew-text-primary flex items-center gap-1 font-medium transition-colors">
             <ArrowLeft className="w-3.5 h-3.5" />
-            Dashboard
+            <span>Dashboard</span>
           </Link>
-          <span>/</span>
-          <span className="text-crew-text-primary font-semibold truncate max-w-[200px] sm:max-w-xs">
+          <span className="text-crew-border">/</span>
+          <span className="text-crew-text-secondary font-medium">Projects</span>
+          <span className="text-crew-border">/</span>
+          <span className="text-crew-text-primary font-semibold truncate max-w-[240px] sm:max-w-md">
             {project?.name}
           </span>
         </div>
 
-        {/* Analytics Shortcut */}
+        {/* Analytics & Overview Shortcut */}
         {project?.team_id && (
           <Link
             to={`/teams/${project.team_id}`}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-crew-action hover:text-crew-action-hover px-2.5 py-1.5 rounded hover:bg-crew-bg transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-crew-text-secondary hover:text-crew-text-primary px-3 py-1.5 rounded-xl border border-crew-border bg-crew-surface hover:bg-crew-bg transition-colors shadow-subtle"
           >
-            <BarChart3 className="w-4 h-4" />
-            <span>Team Overview & Analytics</span>
+            <BarChart3 className="w-3.5 h-3.5 text-crew-text-tertiary" />
+            <span>Team Analytics</span>
           </Link>
         )}
       </div>
 
-      {/* Workspace Header Panel */}
-      <div className="bg-crew-surface border border-crew-border rounded-lg p-6 shadow-card space-y-4">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div className="space-y-1.5 max-w-2xl">
+      {/* Top Project Command Bar */}
+      <div className="space-y-4">
+        {/* Title and Top Row */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-crew-bg border border-crew-border text-crew-text-secondary">
-                {project?.team_name || 'Team Deliverable'}
+              <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-crew-bg border border-crew-border text-crew-text-secondary">
+                {project?.team_name || 'Academic Sprint'}
               </span>
-              <span className="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-crew-sand/20 text-crew-warning border border-crew-sand/30">
+              <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/40">
                 {project?.status || 'Active'}
               </span>
               {overdueCount > 0 && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-sm bg-crew-danger/10 text-crew-danger border border-crew-danger/20 flex items-center gap-1">
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/40 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
-                  {overdueCount} Overdue Task{overdueCount === 1 ? '' : 's'}
+                  {overdueCount} Overdue
                 </span>
               )}
             </div>
@@ -239,54 +304,75 @@ export default function ProjectWorkspacePage() {
             </h1>
 
             {project?.description && (
-              <p className="text-xs sm:text-sm text-crew-text-secondary leading-relaxed">
+              <p className="text-xs sm:text-sm text-crew-text-secondary leading-relaxed max-w-3xl pt-0.5">
                 {project.description}
               </p>
             )}
           </div>
 
-          {/* Quick Header Actions */}
+          {/* Primary Action Button (Solid Dark Button matching Reference Image 1) */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <Button onClick={() => handleOpenCreateTask('todo')} icon={Plus}>
-              New Task
-            </Button>
+            <button
+              type="button"
+              onClick={() => handleOpenCreateTask('todo')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-[#181B20] text-white hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-all shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Task</span>
+            </button>
           </div>
         </div>
 
-        {/* Deliverables Progress & Dates */}
-        <div className="pt-4 border-t border-crew-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
-          <div className="flex items-center gap-4 flex-wrap text-crew-text-secondary">
-            {project?.start_date && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Started: {formatDate(project.start_date)}</span>
-              </div>
+        {/* View Switcher Tabs & Progress Strip matching Reference Image 1 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-b border-crew-border/60 pb-3">
+          {/* Segmented View Tabs */}
+          <div className="flex items-center gap-1 p-0.5 rounded-xl bg-crew-bg border border-crew-border w-fit">
+            <button
+              type="button"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-crew-surface text-crew-text-primary shadow-subtle border border-crew-border/60"
+            >
+              Board
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/my-tasks')}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-crew-text-secondary hover:text-crew-text-primary transition-colors"
+            >
+              List
+            </button>
+            {project?.team_id && (
+              <button
+                type="button"
+                onClick={() => navigate(`/teams/${project.team_id}`)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-crew-text-secondary hover:text-crew-text-primary transition-colors"
+              >
+                Analytics
+              </button>
             )}
+          </div>
+
+          {/* Right Metrics & Progress Bar */}
+          <div className="flex items-center gap-4 text-xs text-crew-text-secondary flex-wrap">
             {project?.deadline && (
               <div className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-crew-terracotta" />
-                <span className="font-medium text-crew-text-primary">
-                  Target Deadline: {formatDate(project.deadline)}
-                </span>
+                <Calendar className="w-3.5 h-3.5 text-crew-text-tertiary" />
+                <span>Target Deadline: <strong className="text-crew-text-primary font-semibold">{formatDate(project.deadline)}</strong></span>
               </div>
             )}
             <div className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 text-crew-text-tertiary" />
               <span>{teamMembers.length} Members</span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <span className="font-heading font-semibold text-crew-text-primary">
-                {completedTasksCount}/{totalTasksCount} Completed ({completionPercentage}%)
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-crew-text-primary">
+                {completedTasksCount}/{totalTasksCount} ({completionPercentage}%)
               </span>
-            </div>
-            <div className="w-28 h-2 rounded-full bg-crew-bg overflow-hidden">
-              <div
-                className="h-full rounded-full bg-crew-action transition-all duration-300"
-                style={{ width: `${completionPercentage}%` }}
-              />
+              <div className="w-24 h-2 rounded-full bg-crew-bg border border-crew-border/60 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-[#181B20] dark:bg-white transition-all duration-300"
+                  style={{ width: `${completionPercentage}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -320,8 +406,8 @@ export default function ProjectWorkspacePage() {
         totalCount={tasks.length}
       />
 
-      {/* 3-Column Interactive Kanban Board */}
-      <div className="flex flex-col lg:flex-row gap-6 overflow-x-auto pb-6">
+      {/* 5-Column Interactive Academic Kanban Board */}
+      <div className="flex flex-col xl:flex-row gap-4 overflow-x-auto pb-6">
         {/* Column 1: To Do */}
         <KanbanColumn
           id="col-todo"
@@ -331,6 +417,10 @@ export default function ProjectWorkspacePage() {
           onAddTask={handleOpenCreateTask}
           onEditTask={handleOpenEditTask}
           onStatusChange={handleStatusChange}
+          onSubmitWork={handleOpenSubmit}
+          onReviewWork={handleOpenReview}
+          currentUserId={user?.id}
+          isLeaderOrReviewer={isLeaderOrTeacher}
         />
 
         {/* Column 2: In Progress */}
@@ -342,17 +432,52 @@ export default function ProjectWorkspacePage() {
           onAddTask={handleOpenCreateTask}
           onEditTask={handleOpenEditTask}
           onStatusChange={handleStatusChange}
+          onSubmitWork={handleOpenSubmit}
+          onReviewWork={handleOpenReview}
+          currentUserId={user?.id}
+          isLeaderOrReviewer={isLeaderOrTeacher}
         />
 
-        {/* Column 3: Done */}
+        {/* Column 3: Submitted for Review */}
         <KanbanColumn
-          id="col-done"
-          title="Done"
-          statusKey="done"
-          tasks={doneTasks}
-          onAddTask={handleOpenCreateTask}
+          id="col-submitted"
+          title="Submitted for Review"
+          statusKey="submitted"
+          tasks={submittedTasks}
           onEditTask={handleOpenEditTask}
           onStatusChange={handleStatusChange}
+          onSubmitWork={handleOpenSubmit}
+          onReviewWork={handleOpenReview}
+          currentUserId={user?.id}
+          isLeaderOrReviewer={isLeaderOrTeacher}
+        />
+
+        {/* Column 4: Changes Requested */}
+        <KanbanColumn
+          id="col-changes-requested"
+          title="Changes Requested"
+          statusKey="changes_requested"
+          tasks={changesRequestedTasks}
+          onEditTask={handleOpenEditTask}
+          onStatusChange={handleStatusChange}
+          onSubmitWork={handleOpenSubmit}
+          onReviewWork={handleOpenReview}
+          currentUserId={user?.id}
+          isLeaderOrReviewer={isLeaderOrTeacher}
+        />
+
+        {/* Column 5: Approved / Done */}
+        <KanbanColumn
+          id="col-done"
+          title="Approved / Completed"
+          statusKey="done"
+          tasks={doneTasks}
+          onEditTask={handleOpenEditTask}
+          onStatusChange={handleStatusChange}
+          onSubmitWork={handleOpenSubmit}
+          onReviewWork={handleOpenReview}
+          currentUserId={user?.id}
+          isLeaderOrReviewer={isLeaderOrTeacher}
         />
       </div>
 
@@ -365,6 +490,22 @@ export default function ProjectWorkspacePage() {
         taskToEdit={taskToEdit}
         initialStatus={targetColumnStatus}
         onSaved={handleTaskSaved}
+      />
+
+      {/* Deliverable Submission Modal */}
+      <SubmissionModal
+        isOpen={submissionModalOpen}
+        onClose={() => setSubmissionModalOpen(false)}
+        task={taskToSubmit}
+        onSubmitted={handleTaskSubmitted}
+      />
+
+      {/* Deliverable Review Modal */}
+      <ReviewModal
+        isOpen={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        task={taskToReview}
+        onReviewed={handleTaskReviewed}
       />
     </div>
   );

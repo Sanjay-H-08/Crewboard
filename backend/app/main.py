@@ -2,11 +2,16 @@
 Crewboard Backend Application Entrypoint
 """
 
-from fastapi import FastAPI
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.api import api_router
 from app.core.config import settings
+from app.db.session import get_db
 
 app = FastAPI(
     title="Crewboard API",
@@ -28,10 +33,24 @@ app.add_middleware(
 
 
 @app.get("/api/health", tags=["System"])
-def health_check():
-    """System health check endpoint for monitoring and container readiness."""
+def health_check(
+    response: Response,
+    db: Annotated[Session, Depends(get_db)] = None,
+):
+    """System health check endpoint for monitoring and container readiness.
+    Verifies database connectivity so infrastructure health monitors reflect actual readiness.
+    """
+    db_status = "connected"
+    if db is not None:
+        try:
+            db.execute(text("SELECT 1"))
+        except Exception:
+            db_status = "disconnected"
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status,
         "service": "crewboard-backend",
         "version": "0.1.0",
     }

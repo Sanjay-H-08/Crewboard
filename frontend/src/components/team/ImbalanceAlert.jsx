@@ -5,7 +5,7 @@ export default function ImbalanceAlert({ warnings = [] }) {
   if (!warnings || warnings.length === 0) return null;
 
   return (
-    <div className="bg-crew-warning/10 border border-crew-warning/30 rounded-lg p-5 shadow-subtle space-y-3">
+    <div className="bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/40 rounded-2xl p-5 shadow-subtle space-y-3">
       <div className="flex items-center gap-2 text-crew-warning font-heading font-bold text-sm tracking-tight">
         <AlertTriangle className="w-4 h-4 flex-shrink-0 animate-pulse" />
         <span>Workload Imbalance & Risk Detection</span>

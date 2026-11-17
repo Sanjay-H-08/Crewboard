@@ -7,7 +7,7 @@ import { Mail, Lock, User, ShieldCheck } from 'lucide-react';
 
 export default function AuthPage({ initialMode = 'login' }) {
   const [mode, setMode] = useState(initialMode); // 'login' | 'register'
-  const { login, register, isAuthenticated } = useAuth();
+  const { login, register, isAuthenticated, isTeacher } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -25,10 +25,10 @@ export default function AuthPage({ initialMode = 'login' }) {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      const destination = location.state?.from?.pathname || '/dashboard';
+      const destination = location.state?.from?.pathname || (isTeacher ? '/teacher' : '/dashboard');
       navigate(destination, { replace: true });
     }
-  }, [isAuthenticated, navigate, location]);
+  }, [isAuthenticated, isTeacher, navigate, location]);
 
   // Keep mode in sync if prop changes
   useEffect(() => {
@@ -95,21 +95,23 @@ export default function AuthPage({ initialMode = 'login' }) {
     <div className="min-h-screen bg-crew-bg flex flex-col justify-center items-center px-4 py-12">
       {/* Brand Header */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2.5 mb-3">
-          <div className="w-9 h-9 rounded-md bg-crew-action flex items-center justify-center text-crew-surface font-heading font-bold text-xl shadow-subtle">
-            C
+        <div className="inline-flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#181B20] dark:bg-white flex items-center justify-center text-white dark:text-gray-900 font-heading font-bold text-lg shadow-sm">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M4 6h16M4 12h10M4 18h16" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
           <span className="font-heading font-bold text-2xl text-crew-text-primary tracking-tight">
             Crewboard
           </span>
         </div>
-        <p className="text-sm text-crew-text-secondary max-w-sm font-medium">
+        <p className="text-xs sm:text-sm text-crew-text-secondary max-w-sm leading-relaxed">
           Collaborative clarity, transparent ownership, and objective workload analytics for student teams.
         </p>
       </div>
 
       {/* Main Auth Card */}
-      <div className="w-full max-w-md bg-crew-surface border border-crew-border rounded-lg shadow-card p-8">
+      <div className="w-full max-w-md bg-crew-surface border border-crew-border rounded-3xl shadow-card p-6 sm:p-8">
         {/* Mode Toggle Switch */}
         <div className="flex border-b border-crew-border mb-6">
           <button
@@ -121,13 +123,13 @@ export default function AuthPage({ initialMode = 'login' }) {
             }}
             className={`flex-1 pb-3 text-sm font-heading font-semibold text-center transition-colors relative ${
               mode === 'login'
-                ? 'text-crew-action'
-                : 'text-crew-text-secondary hover:text-crew-text-primary'
+                ? 'text-crew-text-primary'
+                : 'text-crew-text-tertiary hover:text-crew-text-primary'
             }`}
           >
             Sign In
             {mode === 'login' && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-crew-action rounded-full" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#181B20] dark:bg-white rounded-full" />
             )}
           </button>
           <button
@@ -139,20 +141,20 @@ export default function AuthPage({ initialMode = 'login' }) {
             }}
             className={`flex-1 pb-3 text-sm font-heading font-semibold text-center transition-colors relative ${
               mode === 'register'
-                ? 'text-crew-action'
-                : 'text-crew-text-secondary hover:text-crew-text-primary'
+                ? 'text-crew-text-primary'
+                : 'text-crew-text-tertiary hover:text-crew-text-primary'
             }`}
           >
             Create Account
             {mode === 'register' && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-crew-action rounded-full" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#181B20] dark:bg-white rounded-full" />
             )}
           </button>
         </div>
 
         {/* Global Error Banner */}
         {error && (
-          <div className="mb-5 p-3 rounded bg-crew-danger/10 border border-crew-danger/20 text-crew-danger text-xs font-medium leading-relaxed">
+          <div className="mb-5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/40 text-rose-700 dark:text-rose-300 text-xs font-medium leading-relaxed">
             {error}
           </div>
         )}
@@ -221,7 +223,7 @@ export default function AuthPage({ initialMode = 'login' }) {
             <Button
               type="submit"
               loading={loading}
-              className="w-full py-2.5 text-sm font-semibold"
+              className="w-full py-2.5 text-xs sm:text-sm font-semibold rounded-xl"
             >
               {mode === 'login' ? 'Sign In to Crewboard' : 'Create Account & Sign In'}
             </Button>
@@ -240,7 +242,7 @@ export default function AuthPage({ initialMode = 'login' }) {
                   setError(null);
                   setFieldErrors({});
                 }}
-                className="font-semibold text-crew-action hover:underline focus:outline-none"
+                className="font-semibold text-crew-text-primary hover:underline focus:outline-none"
               >
                 Register here
               </button>
@@ -255,7 +257,7 @@ export default function AuthPage({ initialMode = 'login' }) {
                   setError(null);
                   setFieldErrors({});
                 }}
-                className="font-semibold text-crew-action hover:underline focus:outline-none"
+                className="font-semibold text-crew-text-primary hover:underline focus:outline-none"
               >
                 Sign in
               </button>
@@ -265,8 +267,8 @@ export default function AuthPage({ initialMode = 'login' }) {
       </div>
 
       {/* Trust & Spec Badge */}
-      <div className="mt-8 flex items-center gap-2 text-xs text-crew-text-secondary">
-        <ShieldCheck className="w-4 h-4 text-crew-action" />
+      <div className="mt-8 flex items-center gap-2 text-xs text-crew-text-tertiary">
+        <ShieldCheck className="w-4 h-4 text-crew-text-secondary" />
         <span>Strict Multi-Tenant Isolation & Argon2 Security</span>
       </div>
     </div>

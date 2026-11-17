@@ -29,7 +29,7 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-crew-text-primary/25 backdrop-blur-[2px] transition-opacity duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -38,12 +38,12 @@ export default function Modal({
       aria-labelledby="modal-title"
     >
       <div
-        className={`bg-crew-surface border border-crew-border rounded-lg shadow-card w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150`}
+        className={`bg-crew-surface border border-crew-border rounded-3xl shadow-modal w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150`}
       >
         {/* Modal Header */}
-        <div className="px-6 py-5 border-b border-crew-border flex items-center justify-between">
+        <div className="px-6 py-4.5 border-b border-crew-border flex items-center justify-between">
           <div>
-            <h2 id="modal-title" className="font-heading text-lg font-bold text-crew-text-primary tracking-tight">
+            <h2 id="modal-title" className="font-heading text-base sm:text-lg font-bold text-crew-text-primary tracking-tight">
               {title}
             </h2>
             {description && (
@@ -53,10 +53,10 @@ export default function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg p-1.5 rounded-sm transition-colors focus:outline-none focus:ring-2 focus:ring-crew-action"
+            className="text-crew-text-tertiary hover:text-crew-text-primary hover:bg-black/5 dark:hover:bg-white/5 p-1.5 rounded-lg transition-colors focus:outline-none"
             aria-label="Close dialog"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 

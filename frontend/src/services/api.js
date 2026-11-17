@@ -98,6 +98,7 @@ export const projectsService = {
 };
 
 export const tasksService = {
+  getMyTasks: (params = {}) => api.get('/tasks/my', { params }).then((res) => res.data),
   listByProject: (projectId, params = {}) => {
     // Clean out empty/all filter params
     const cleanParams = {};
@@ -108,6 +109,67 @@ export const tasksService = {
   },
   create: (payload) => api.post('/tasks', payload).then((res) => res.data),
   update: (taskId, payload) => api.patch(`/tasks/${taskId}`, payload).then((res) => res.data),
+  submit: (taskId, formData) =>
+    api
+      .post(`/tasks/${taskId}/submit`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((res) => res.data),
+  review: (taskId, payload) => api.post(`/tasks/${taskId}/review`, payload).then((res) => res.data),
+  getSubmissions: (taskId) => api.get(`/tasks/${taskId}/submissions`).then((res) => res.data),
+};
+
+export const filesService = {
+  getDownloadUrl: (fileId) => `${API_BASE_URL}/files/${fileId}/download`,
+  downloadFile: (fileId, filename) =>
+    api
+      .get(`/files/${fileId}/download`, { responseType: 'blob' })
+      .then((res) => {
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename || 'downloaded_file');
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }),
+};
+
+export const teacherService = {
+  listProjects: () => api.get('/teacher/projects').then((res) => res.data),
+  createProject: (payload) => api.post('/teacher/projects', payload).then((res) => res.data),
+  assignProject: (projectId, teamId) =>
+    api.post(`/teacher/projects/${projectId}/assign`, { team_id: teamId }).then((res) => res.data),
+  extendDeadline: (projectId, payload) =>
+    api.post(`/teacher/projects/${projectId}/extend-deadline`, payload).then((res) => res.data),
+  exportReport: (projectId, format = 'csv') =>
+    api
+      .get(`/teacher/projects/${projectId}/export`, {
+        params: { format },
+        responseType: format === 'csv' ? 'blob' : 'json',
+      })
+      .then((res) => {
+        if (format === 'csv') {
+          const url = window.URL.createObjectURL(new Blob([res.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `project_${projectId}_report.csv`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+          return true;
+        }
+        return res.data;
+      }),
+};
+
+export const chatService = {
+  listMessages: (teamId, since) =>
+    api.get(`/teams/${teamId}/messages`, { params: since ? { since } : {} }).then((res) => res.data),
+  sendMessage: (teamId, message) =>
+    api.post(`/teams/${teamId}/messages`, { message }).then((res) => res.data),
 };
 
 export default api;

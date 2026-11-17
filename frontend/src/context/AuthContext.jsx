@@ -93,10 +93,13 @@ export function AuthProvider({ children }) {
     setAuthError(null);
   }, []);
 
+  const isTeacher = Boolean(user?.system_role === 'teacher');
+
   const value = {
     user,
     token,
     isAuthenticated: Boolean(token && user),
+    isTeacher,
     loading,
     authError,
     setAuthError,

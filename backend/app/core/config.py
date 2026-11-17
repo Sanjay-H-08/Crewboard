@@ -30,6 +30,14 @@ class Settings(BaseSettings):
         "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
     )
 
+    # File Uploads Storage
+    UPLOAD_DIR: str = os.getenv(
+        "UPLOAD_DIR",
+        "/app/uploads"
+        if os.path.exists("/app") and os.path.isdir("/app")
+        else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads"),
+    )
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parsed list of allowed CORS origins without wildcards."""

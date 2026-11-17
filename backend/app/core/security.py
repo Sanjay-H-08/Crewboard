@@ -6,6 +6,7 @@ import uuid
 
 import jwt
 from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 from pwdlib.hashers.argon2 import Argon2Hasher
 
 from app.core.config import settings
@@ -20,8 +21,15 @@ def get_password_hash(password: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plaintext password against an Argon2 hash."""
-    return password_hasher.verify(plain_password, hashed_password)
+    """Verify a plaintext password against an Argon2 hash.
+    Safely returns False on corrupted, empty, or incompatible hash formats instead of raising UnknownHashError.
+    """
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        return password_hasher.verify(plain_password, hashed_password)
+    except (UnknownHashError, ValueError):
+        return False
 
 
 def create_access_token(subject: str | uuid.UUID, expires_delta: timedelta | None = None) -> str:

@@ -25,17 +25,17 @@ export default function Input({
       {label && (
         <label
           htmlFor={id}
-          className="text-xs font-semibold uppercase tracking-wider text-crew-text-secondary font-heading flex items-center justify-between"
+          className="text-[11px] font-semibold uppercase tracking-wider text-crew-text-secondary flex items-center justify-between"
         >
           <span>
-            {label} {required && <span className="text-crew-terracotta">*</span>}
+            {label} {required && <span className="text-amber-500">*</span>}
           </span>
         </label>
       )}
 
       <div className="relative flex items-center">
         {Icon && (
-          <div className="absolute left-3 text-crew-text-secondary/70 pointer-events-none flex items-center justify-center">
+          <div className="absolute left-3 text-crew-text-tertiary pointer-events-none flex items-center justify-center">
             <Icon className="w-4 h-4" />
           </div>
         )}
@@ -48,12 +48,12 @@ export default function Input({
           placeholder={placeholder}
           disabled={disabled}
           required={required}
-          className={`w-full bg-crew-surface text-crew-text-primary text-sm rounded border transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-crew-action/20 focus:border-crew-action disabled:bg-crew-bg disabled:text-crew-text-secondary disabled:cursor-not-allowed ${
+          className={`w-full bg-crew-surface text-crew-text-primary text-xs sm:text-sm rounded-xl border transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 focus:border-gray-400 dark:focus:border-gray-500 disabled:bg-crew-bg disabled:text-crew-text-secondary disabled:cursor-not-allowed shadow-subtle ${
             Icon ? 'pl-9' : 'pl-3.5'
-          } ${isPassword ? 'pr-10' : 'pr-3.5'} py-2 ${
+          } ${isPassword ? 'pr-10' : 'pr-3.5'} py-2 h-9 sm:h-9.5 ${
             error
-              ? 'border-crew-danger focus:border-crew-danger focus:ring-crew-danger/20'
-              : 'border-crew-border hover:border-crew-sand'
+              ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20'
+              : 'border-crew-border hover:border-gray-300 dark:hover:border-gray-600'
           }`}
           {...props}
         />
@@ -61,9 +61,8 @@ export default function Input({
         {isPassword && (
           <button
             type="button"
-            tabIndex={-1}
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 text-crew-text-secondary hover:text-crew-text-primary transition-colors p-0.5 focus:outline-none"
+            className="absolute right-3 text-crew-text-tertiary hover:text-crew-text-primary focus:outline-none"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -72,9 +71,9 @@ export default function Input({
       </div>
 
       {error ? (
-        <p className="text-xs text-crew-danger font-medium mt-0.5">{error}</p>
+        <p className="text-[11px] text-rose-500 font-medium">{error}</p>
       ) : helperText ? (
-        <p className="text-xs text-crew-text-secondary mt-0.5">{helperText}</p>
+        <p className="text-[11px] text-crew-text-secondary">{helperText}</p>
       ) : null}
     </div>
   );

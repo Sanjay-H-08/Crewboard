@@ -76,6 +76,14 @@ export function isTaskOverdue(task) {
  * Format action logs into human readable activity sentences
  */
 export function formatActivityText(activity) {
+  if (!activity) {
+    return {
+      actor: 'A team member',
+      action: 'updated',
+      target: 'an item',
+      detail: '',
+    };
+  }
   const actor = activity.user_name || 'A team member';
   const task = activity.task_title ? `"${activity.task_title}"` : 'a task';
   const project = activity.project_name ? ` in ${activity.project_name}` : '';
@@ -107,28 +115,28 @@ export function formatActivityText(activity) {
         actor,
         action: 'set priority of',
         target: task,
-        detail: `to ${activity.new_value}`,
+        detail: `to ${formatPriorityLabel(activity.new_value)}`,
       };
     case 'deadline_changed':
       return {
         actor,
         action: 'updated deadline for',
         target: task,
-        detail: `to ${formatDate(activity.new_value)}`,
+        detail: activity.new_value ? `to ${formatDate(activity.new_value)}` : '',
       };
     case 'project_created':
       return {
         actor,
         action: 'created project',
-        target: `"${activity.new_value || activity.project_name}"`,
+        target: `"${activity.new_value || activity.project_name || 'Project'}"`,
         detail: '',
       };
     default:
       return {
         actor,
-        action: activity.action?.replace('_', ' ') || 'updated',
+        action: activity.action ? String(activity.action).replace(/_/g, ' ') : 'updated',
         target: task,
-        detail: '',
+        detail: activity.new_value ? `(${String(activity.new_value)})` : '',
       };
   }
 }
@@ -139,10 +147,14 @@ export function formatStatusLabel(status) {
       return 'To Do';
     case 'in_progress':
       return 'In Progress';
+    case 'submitted':
+      return 'In Review';
+    case 'changes_requested':
+      return 'Changes Requested';
     case 'done':
       return 'Done';
     default:
-      return status || 'Unknown';
+      return status ? String(status).replace(/_/g, ' ') : 'Unknown';
   }
 }
 

@@ -217,3 +217,133 @@ def test_list_tasks_with_filtering_and_overdue(client, create_user):
     ).json()
     assert len(unassigned) == 1
     assert unassigned[0]["title"] == "Task 3"
+
+
+def test_get_my_tasks_endpoint(client, create_user):
+    """Verify GET /api/tasks/my returns tasks assigned across projects with project/team context."""
+    user = create_user(name="Lead Dev")
+    teammate = create_user(name="Active Dev")
+
+    team = client.post("/api/teams", json={"name": "Alpha Squad"}, headers=user["headers"]).json()
+    client.post("/api/teams/join", json={"join_code": team["join_code"]}, headers=teammate["headers"])
+
+    proj1 = client.post("/api/projects", json={"team_id": team["id"], "name": "Sprint 1"}, headers=user["headers"]).json()
+    proj2 = client.post("/api/projects", json={"team_id": team["id"], "name": "Sprint 2"}, headers=user["headers"]).json()
+
+    # Create task assigned to teammate in sprint 1
+    client.post(
+        "/api/tasks",
+        json={"project_id": proj1["id"], "title": "Implement Auth", "assigned_to": teammate["user"]["id"]},
+        headers=user["headers"],
+    )
+    # Create task assigned to teammate in sprint 2
+    client.post(
+        "/api/tasks",
+        json={"project_id": proj2["id"], "title": "Write Docs", "assigned_to": teammate["user"]["id"]},
+        headers=user["headers"],
+    )
+    # Create task assigned to user (not teammate)
+    client.post(
+        "/api/tasks",
+        json={"project_id": proj1["id"], "title": "Other Task", "assigned_to": user["user"]["id"]},
+        headers=user["headers"],
+    )
+
+    # Teammate calls /api/tasks/my
+    my_tasks_res = client.get("/api/tasks/my", headers=teammate["headers"])
+    assert my_tasks_res.status_code == 200
+    my_tasks = my_tasks_res.json()
+    assert len(my_tasks) == 2
+    titles = [t["title"] for t in my_tasks]
+    assert "Implement Auth" in titles
+    assert "Write Docs" in titles
+    assert my_tasks[0]["team_name"] == "Alpha Squad"
+    assert my_tasks[0]["assignee_name"] == "Active Dev"
+
+
+def test_reviewer_designation_and_teacher_restrictions(client, create_user, db):
+    """Verify Tests 3, 4, 5: Reviewer designation restricted to leaders and teachers blocked from task mutation."""
+    from app.cli.provision_teacher import provision_teacher
+
+    lead = create_user(name="Team Captain")
+    member = create_user(name="Regular Member")
+    other_member = create_user(name="Other Member")
+
+    team = client.post("/api/teams", json={"name": "Formula Dynamics"}, headers=lead["headers"]).json()
+    client.post("/api/teams/join", json={"join_code": team["join_code"]}, headers=member["headers"])
+    client.post("/api/teams/join", json={"join_code": team["join_code"]}, headers=other_member["headers"])
+
+    proj = client.post(
+        "/api/projects", json={"team_id": team["id"], "name": "Suspension Kinematics"}, headers=lead["headers"]
+    ).json()
+
+    # Provision teacher
+    provision_teacher("prof.dynamics@university.edu", "Prof. Dynamics", "SecretPass123!", db=db)
+    t_login = client.post("/api/auth/login", json={"email": "prof.dynamics@university.edu", "password": "SecretPass123!"}).json()
+    t_headers = {"Authorization": f"Bearer {t_login['access_token']}"}
+
+    # Test 3: Teacher cannot create student tasks in project
+    teacher_create = client.post(
+        "/api/tasks",
+        json={"project_id": proj["id"], "title": "Teacher created task", "assigned_to": member["user"]["id"]},
+        headers=t_headers,
+    )
+    assert teacher_create.status_code == 403
+    assert "supervisory read-only" in teacher_create.json()["detail"].lower()
+
+    # Test 4: Regular member cannot designate a reviewer during creation -> 403
+    unauth_create = client.post(
+        "/api/tasks",
+        json={
+            "project_id": proj["id"],
+            "title": "Member created task",
+            "reviewer_id": other_member["user"]["id"],
+        },
+        headers=member["headers"],
+    )
+    assert unauth_create.status_code == 403
+    assert "only the team leader" in unauth_create.json()["detail"].lower()
+
+    # Leader creates task
+    task = client.post(
+        "/api/tasks",
+        json={"project_id": proj["id"], "title": "Camber Analysis", "assigned_to": member["user"]["id"]},
+        headers=lead["headers"],
+    ).json()
+
+    # Test 4: Regular member cannot modify reviewer_id -> 403
+    unauth_patch = client.patch(
+        f"/api/tasks/{task['id']}",
+        json={"reviewer_id": other_member["user"]["id"]},
+        headers=member["headers"],
+    )
+    assert unauth_patch.status_code == 403
+    assert "only the team leader" in unauth_patch.json()["detail"].lower()
+
+    # Leader appoints other_member as designated reviewer -> 200
+    leader_patch = client.patch(
+        f"/api/tasks/{task['id']}",
+        json={"reviewer_id": other_member["user"]["id"]},
+        headers=lead["headers"],
+    )
+    assert leader_patch.status_code == 200
+    assert leader_patch.json()["reviewer_id"] == other_member["user"]["id"]
+
+    # Test 5: Designated reviewer cannot appoint another reviewer -> 403
+    reviewer_attempt = client.patch(
+        f"/api/tasks/{task['id']}",
+        json={"reviewer_id": member["user"]["id"]},
+        headers=other_member["headers"],
+    )
+    assert reviewer_attempt.status_code == 403
+    assert "only the team leader" in reviewer_attempt.json()["detail"].lower()
+
+    # Test 3: Teacher cannot modify student task -> 403
+    teacher_patch = client.patch(
+        f"/api/tasks/{task['id']}",
+        json={"title": "Teacher modified title"},
+        headers=t_headers,
+    )
+    assert teacher_patch.status_code == 403
+    assert "supervisory read-only" in teacher_patch.json()["detail"].lower()
+

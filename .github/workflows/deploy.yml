@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event.inputs.deploy_environment || 'production' }}
-      url: https://${{ secrets.DOMAIN || 'localhost' }}
+      url: ${{ steps.validate.outputs.deploy_url }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -50,6 +50,8 @@ jobs:
 
       - name: Validate Deployment Tag & Target Parameters
         id: validate
+        env:
+          CONFIG_DOMAIN: ${{ secrets.DOMAIN || vars.DOMAIN || '' }}
         run: |
           TAG="${{ github.event.inputs.image_tag }}"
           if [[ -z "$TAG" ]]; then
@@ -70,8 +72,11 @@ jobs:
           fi
 
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          TARGET_DOMAIN="${CONFIG_DOMAIN:-localhost}"
+
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
+          echo "deploy_url=https://${TARGET_DOMAIN}" >> $GITHUB_OUTPUT
 
       - name: Set up SSH Deployment Agent
         uses: webfactory/ssh-agent@v0.9.0

@@ -6,6 +6,7 @@ import CreateTeamModal from '../modals/CreateTeamModal';
 import JoinTeamModal from '../modals/JoinTeamModal';
 import CreateProjectModal from '../modals/CreateProjectModal';
 import ThemeToggle from '../common/ThemeToggle';
+import NotificationCenter from './NotificationCenter';
 import ErrorBoundary from '../common/ErrorBoundary';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
@@ -68,6 +69,7 @@ export default function AppLayout() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-2.5">
+              <NotificationCenter />
               <ThemeToggle compact={true} />
 
               {activeTeamId && (

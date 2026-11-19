@@ -1,0 +1,75 @@
+# ==============================================================================
+# CREWBOARD — DOCKER COMPOSE PRODUCTION OVERRIDE (docker-compose.prod.yml)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # Caddy Edge Gateway (Sole Service Binding Host Ports 80 & 443 with TLS)
+  # ----------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: crewboard_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      TLS_EMAIL: ${TLS_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - crewboard_network
+
+  # ----------------------------------------------------------------------------
+  # React + Vite Frontend & Nginx Static Host (Internal Network Only)
+  # ----------------------------------------------------------------------------
+  frontend:
+    restart: always
+    # Isolated on internal network; all incoming traffic passes through Caddy TLS
+    ports: []
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ----------------------------------------------------------------------------
+  # FastAPI Backend Service (Hardened Production: Internal Network Only)
+  # ----------------------------------------------------------------------------
+  backend:
+    restart: always
+    environment:
+      ENVIRONMENT: production
+    # Isolated on internal network; accessible strictly via frontend Nginx reverse proxy
+    ports: []
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 Database (Hardened Production: No Host Port Exposure)
+  # ----------------------------------------------------------------------------
+  db:
+    restart: always
+    # Isolated completely within Docker internal network; zero external host access
+    ports: []
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  caddy_data:
+    name: crewboard_caddy_data
+  caddy_config:
+    name: crewboard_caddy_config

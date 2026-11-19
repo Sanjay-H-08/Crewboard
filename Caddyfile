@@ -1,0 +1,35 @@
+# ==============================================================================
+# CREWBOARD — CADDY REVERSE PROXY & AUTOMATED TLS CONFIGURATION
+# ==============================================================================
+# Automatic HTTPS, HTTP-to-HTTPS redirect, and reverse proxy to Nginx frontend.
+# Certificates are managed and renewed automatically via Let's Encrypt / ZeroSSL.
+# ==============================================================================
+
+{
+    # Global settings: ACME email for renewal notices, disable local admin API
+    email {$TLS_EMAIL:admin@example.com}
+    admin off
+}
+
+# Site block: Uses DOMAIN environment variable (defaults to localhost)
+{$DOMAIN:localhost} {
+    # Modern compression for responses
+    encode gzip zstd
+
+    # HTTP security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Reverse proxy to frontend Nginx container (which serves SPA and proxies /api/)
+    # Streaming body support by default (preserves 25MB deliverable uploads)
+    reverse_proxy frontend:80 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

@@ -60,6 +60,9 @@ export function formatApiError(error, defaultMsg = 'An unexpected error occurred
     }
     return JSON.stringify(detail);
   }
+  if (error?.response?.status === 413) {
+    return 'The uploaded file or request payload exceeds the allowed size limit (maximum 25MB per file).';
+  }
   if (error?.message) {
     if (error.message.includes('Network Error') || error.code === 'ERR_NETWORK') {
       return 'Unable to connect to the backend server. Please verify the service is running.';
@@ -77,6 +80,8 @@ export const authService = {
   register: (payload) => api.post('/auth/register', payload).then((res) => res.data),
   login: (payload) => api.post('/auth/login', payload).then((res) => res.data),
   getMe: () => api.get('/auth/me').then((res) => res.data),
+  getGamification: (teamId) =>
+    api.get('/auth/gamification', { params: teamId ? { team_id: teamId } : {} }).then((res) => res.data),
 };
 
 export const teamsService = {
@@ -95,10 +100,13 @@ export const projectsService = {
   get: (projectId) => api.get(`/projects/${projectId}`).then((res) => res.data),
   create: (payload) => api.post('/projects', payload).then((res) => res.data),
   getAnalytics: (projectId) => api.get(`/projects/${projectId}/analytics`).then((res) => res.data),
+  getMyAssessment: (projectId) => api.get(`/projects/${projectId}/my-assessment`).then((res) => res.data),
 };
 
 export const tasksService = {
   getMyTasks: (params = {}) => api.get('/tasks/my', { params }).then((res) => res.data),
+  get: (taskId) => api.get(`/tasks/${taskId}`).then((res) => res.data),
+  list: (projectId, params = {}) => tasksService.listByProject(projectId, params),
   listByProject: (projectId, params = {}) => {
     // Clean out empty/all filter params
     const cleanParams = {};
@@ -117,10 +125,14 @@ export const tasksService = {
       .then((res) => res.data),
   review: (taskId, payload) => api.post(`/tasks/${taskId}/review`, payload).then((res) => res.data),
   getSubmissions: (taskId) => api.get(`/tasks/${taskId}/submissions`).then((res) => res.data),
+  getMySubmissions: () => api.get('/submissions/my').then((res) => res.data),
 };
 
 export const filesService = {
   getDownloadUrl: (fileId) => `${API_BASE_URL}/files/${fileId}/download`,
+  getPreviewUrl: (fileId) => `${API_BASE_URL}/files/${fileId}/preview`,
+  fetchBlob: (fileId, mode = 'preview') =>
+    api.get(`/files/${fileId}/${mode}`, { responseType: 'blob' }).then((res) => res.data),
   downloadFile: (fileId, filename) =>
     api
       .get(`/files/${fileId}/download`, { responseType: 'blob' })
@@ -143,6 +155,20 @@ export const teacherService = {
     api.post(`/teacher/projects/${projectId}/assign`, { team_id: teamId }).then((res) => res.data),
   extendDeadline: (projectId, payload) =>
     api.post(`/teacher/projects/${projectId}/extend-deadline`, payload).then((res) => res.data),
+  getContributions: (projectId) =>
+    api.get(`/teacher/projects/${projectId}/contributions`).then((res) => res.data),
+  listSubmissions: (params = {}) =>
+    api.get('/teacher/submissions', { params }).then((res) => res.data),
+  saveAssessment: (projectId, studentId, payload) => {
+    if (!projectId || !studentId) {
+      return Promise.reject(new Error('Project ID and Student ID are required to save assessment.'));
+    }
+    const cleanProjectId = String(projectId).trim();
+    const cleanStudentId = String(studentId).trim();
+    return api
+      .post(`/teacher/projects/${cleanProjectId}/assessments/${cleanStudentId}`, payload)
+      .then((res) => res.data);
+  },
   exportReport: (projectId, format = 'csv') =>
     api
       .get(`/teacher/projects/${projectId}/export`, {

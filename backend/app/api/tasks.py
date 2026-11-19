@@ -26,6 +26,10 @@ from app.models.submission import SubmissionFile, TaskSubmission
 from app.models.task import Task
 from app.models.team import Team, TeamMember
 from app.models.user import User
+from app.schemas.assessment import (
+    StudentSubmissionOverviewResponse,
+    SubmissionFileSummary,
+)
 from app.schemas.task import (
     SubmissionFileResponse,
     TaskCreateRequest,
@@ -45,10 +49,14 @@ ALLOWED_EXTENSIONS = {
     ".pdf": ["application/pdf"],
     ".docx": [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
         "application/octet-stream",
     ],
     ".pptx": [
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
+        "application/x-mspowerpoint",
+        "application/powerpoint",
         "application/octet-stream",
     ],
     ".jpg": ["image/jpeg"],
@@ -348,7 +356,7 @@ def update_task(
             detail="Teachers have supervisory read-only access and cannot modify student tasks.",
         )
 
-    task = get_user_task_or_403(db, task_id, current_user.id)
+    task = get_user_task_or_403(db, task_id, current_user)
     project = db.query(Project).filter(Project.id == task.project_id).first()
     assert project is not None
 
@@ -456,6 +464,17 @@ def update_task(
     return build_task_response(db, task)
 
 
+@router.get("/tasks/{task_id}", response_model=TaskResponse)
+def get_task(
+    task_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Retrieve details of a single task by its ID with full authorization check."""
+    task = get_user_task_or_403(db, task_id, current_user)
+    return build_task_response(db, task)
+
+
 @router.get("/projects/{project_id}/tasks", response_model=list[TaskResponse])
 def list_project_tasks(
     project_id: uuid.UUID,
@@ -466,7 +485,7 @@ def list_project_tasks(
     assigned_to: str | None = Query(None),
 ):
     """List project tasks with multi-criteria filtering for Kanban board."""
-    project = get_user_project_or_403(db, project_id, current_user.id)
+    project = get_user_project_or_403(db, project_id, current_user)
 
     query = db.query(Task).filter(Task.project_id == project.id)
 
@@ -779,3 +798,110 @@ def download_submission_file(
         filename=sub_file.original_filename,
         media_type=sub_file.mime_type,
     )
+
+
+@router.get("/files/{file_id}/preview")
+def preview_submission_file(
+    file_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Preview deliverable file in browser (inline content disposition) with authorization check."""
+    sub_file = db.query(SubmissionFile).filter(SubmissionFile.id == file_id).first()
+    if not sub_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+
+    submission = db.query(TaskSubmission).filter(TaskSubmission.id == sub_file.submission_id).first()
+    if not submission:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission record not found.")
+
+    # Access check: caller must belong to the task's project team or be the supervising teacher
+    get_user_task_or_403(db, submission.task_id, current_user)
+
+    abs_upload_dir = os.path.abspath(settings.UPLOAD_DIR)
+    abs_file_path = os.path.abspath(sub_file.file_path)
+
+    # Path traversal check: file must be located within configured UPLOAD_DIR
+    if os.path.commonpath([abs_upload_dir, abs_file_path]) != abs_upload_dir:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to requested file path.")
+
+    if not os.path.exists(abs_file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File content missing from storage volume.")
+
+    return FileResponse(
+        path=sub_file.file_path,
+        media_type=sub_file.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+@router.get("/submissions/my", response_model=list[StudentSubmissionOverviewResponse])
+def get_my_submissions(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Retrieve all deliverable submissions created by the authenticated student across projects."""
+    submissions = (
+        db.query(TaskSubmission)
+        .filter(TaskSubmission.submitted_by == current_user.id)
+        .order_by(TaskSubmission.created_at.desc())
+        .all()
+    )
+
+    if not submissions:
+        return []
+
+    task_ids = {s.task_id for s in submissions}
+    tasks = db.query(Task).filter(Task.id.in_(task_ids)).all()
+    task_map = {t.id: t for t in tasks}
+
+    project_ids = {t.project_id for t in tasks}
+    projects = db.query(Project).filter(Project.id.in_(project_ids)).all() if project_ids else []
+    project_map = {p.id: p for p in projects}
+
+    reviewer_ids = {s.reviewed_by for s in submissions if s.reviewed_by}
+    reviewers = db.query(User).filter(User.id.in_(reviewer_ids)).all() if reviewer_ids else []
+    reviewer_map = {r.id: r.full_name for r in reviewers}
+
+    results = []
+    for s in submissions:
+        task = task_map.get(s.task_id)
+        if not task:
+            continue
+        project = project_map.get(task.project_id)
+        project_name = project.name if project else "Academic Project"
+
+        is_final_approved = s.status == "approved" and task.status == "done"
+
+        files_summary = [
+            SubmissionFileSummary(
+                id=f.id,
+                original_filename=f.original_filename,
+                file_size_bytes=f.file_size_bytes,
+                mime_type=f.mime_type,
+                uploaded_at=f.uploaded_at,
+            )
+            for f in s.files
+        ]
+
+        results.append(
+            StudentSubmissionOverviewResponse(
+                submission_id=s.id,
+                task_id=s.task_id,
+                task_title=task.title,
+                project_id=task.project_id,
+                project_name=project_name,
+                version=s.version,
+                notes=s.notes,
+                status=s.status,
+                reviewed_by=s.reviewed_by,
+                reviewer_name=reviewer_map.get(s.reviewed_by),
+                review_feedback=s.review_feedback,
+                reviewed_at=s.reviewed_at,
+                created_at=s.created_at,
+                is_final_approved=is_final_approved,
+                files=files_summary,
+            )
+        )
+
+    return results

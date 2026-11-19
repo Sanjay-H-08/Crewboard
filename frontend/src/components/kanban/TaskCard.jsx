@@ -42,8 +42,22 @@ export default function TaskCard({
 
   const latestSub = task.latest_submission;
 
+  function handleDragStart(e) {
+    e.dataTransfer.setData(
+      'text/plain',
+      JSON.stringify({
+        taskId: task.id,
+        fromStatus: task.status,
+      })
+    );
+  }
+
   return (
-    <div className="bg-crew-surface dark:bg-[#1F242F] border border-crew-border/80 dark:border-[#2D3545] rounded-2xl p-4 shadow-subtle hover:shadow-card hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150 flex flex-col justify-between group">
+    <div
+      draggable={true}
+      onDragStart={handleDragStart}
+      className="bg-crew-surface dark:bg-[#1F242F] border border-crew-border/90 dark:border-[#2D3545] rounded-2xl p-4 shadow-subtle hover:shadow-card hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150 flex flex-col justify-between group cursor-grab active:cursor-grabbing select-none"
+    >
       <div>
         {/* Top Category / Topic & Edit Button */}
         <div className="flex items-center justify-between gap-2 mb-1.5">

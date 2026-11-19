@@ -5,12 +5,14 @@ import { tasksService, filesService, formatApiError } from '../../services/api';
 import { formatDate } from '../../utils/formatters';
 import { CheckCircle2, RotateCcw, Download, FileText, AlertCircle, Clock } from 'lucide-react';
 
-export default function ReviewModal({ isOpen, onClose, task, onReviewed }) {
+export default function ReviewModal({ isOpen, onClose, task, onReviewed, onSuccess }) {
   const [feedback, setFeedback] = useState('');
   const [loadingDecision, setLoadingDecision] = useState(null); // 'approved' | 'changes_requested' | null
   const [error, setError] = useState(null);
 
   if (!task) return null;
+
+  const notifyReviewed = onReviewed || onSuccess;
 
   const submission = task.latest_submission;
 
@@ -30,8 +32,8 @@ export default function ReviewModal({ isOpen, onClose, task, onReviewed }) {
       });
       setFeedback('');
       onClose();
-      if (onReviewed) {
-        onReviewed(updatedTask);
+      if (notifyReviewed) {
+        notifyReviewed(updatedTask);
       }
     } catch (err) {
       setError(formatApiError(err, 'Failed to record review decision.'));

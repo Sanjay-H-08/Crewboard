@@ -1,0 +1,26 @@
+# Root .dockerignore
+.git
+.github
+.env
+.env.*
+!.env.example
+docs
+scratch
+*.fish
+crewboard_pgdata
+crewboard_uploads
+uploads
+*.sqlite3
+*.db
+*.sql
+*.sql.gz
+*.dump
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+frontend/node_modules
+frontend/dist
+backend/uploads
+backend/.pytest_cache
+backend/.coverage

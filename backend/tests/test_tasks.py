@@ -347,3 +347,51 @@ def test_reviewer_designation_and_teacher_restrictions(client, create_user, db):
     assert teacher_patch.status_code == 403
     assert "supervisory read-only" in teacher_patch.json()["detail"].lower()
 
+
+def test_get_single_task_and_kanban_listing(client, create_user):
+    """Verify GET /api/tasks/{task_id} and GET /api/projects/{project_id}/tasks for authorized members and 403 for outsiders."""
+    lead = create_user(name="Team Lead")
+    member = create_user(name="Team Member")
+    outsider = create_user(name="Outsider")
+
+    team = client.post("/api/teams", json={"name": "Kanban Team"}, headers=lead["headers"]).json()
+    client.post("/api/teams/join", json={"join_code": team["join_code"]}, headers=member["headers"])
+
+    proj = client.post(
+        "/api/projects", json={"team_id": team["id"], "name": "Kanban Project"}, headers=lead["headers"]
+    ).json()
+
+    task_res = client.post(
+        "/api/tasks",
+        json={
+            "project_id": proj["id"],
+            "title": "Design PCB Layout",
+            "assigned_to": member["user"]["id"],
+            "priority": "high",
+            "status": "todo",
+        },
+        headers=lead["headers"],
+    )
+    assert task_res.status_code == 201
+    task_id = task_res.json()["id"]
+
+    # 1. Lead and member can fetch single task via GET /api/tasks/{task_id}
+    res_lead = client.get(f"/api/tasks/{task_id}", headers=lead["headers"])
+    assert res_lead.status_code == 200
+    assert res_lead.json()["title"] == "Design PCB Layout"
+
+    res_member = client.get(f"/api/tasks/{task_id}", headers=member["headers"])
+    assert res_member.status_code == 200
+    assert res_member.json()["title"] == "Design PCB Layout"
+
+    # 2. Outsider gets 403 Forbidden
+    res_outsider = client.get(f"/api/tasks/{task_id}", headers=outsider["headers"])
+    assert res_outsider.status_code == 403
+
+    # 3. Kanban project task listing
+    list_res = client.get(f"/api/projects/{proj['id']}/tasks", headers=member["headers"])
+    assert list_res.status_code == 200
+    tasks = list_res.json()
+    assert len(tasks) == 1
+    assert tasks[0]["id"] == task_id
+

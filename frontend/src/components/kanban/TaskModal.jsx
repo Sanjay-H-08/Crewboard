@@ -12,10 +12,14 @@ export default function TaskModal({
   projectId,
   teamMembers = [],
   taskToEdit = null,
+  task = null,
   initialStatus = 'todo',
   onSaved,
+  onSuccess,
 }) {
-  const isEditing = Boolean(taskToEdit);
+  const activeTask = taskToEdit || task;
+  const isEditing = Boolean(activeTask);
+  const notifySaved = onSaved || onSuccess;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -28,16 +32,16 @@ export default function TaskModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Sync state when taskToEdit or modal open state changes
+  // Sync state when activeTask or modal open state changes
   useEffect(() => {
-    if (taskToEdit) {
-      setTitle(taskToEdit.title || '');
-      setDescription(taskToEdit.description || '');
-      setAssignedTo(taskToEdit.assigned_to || '');
-      setReviewerId(taskToEdit.reviewer_id || '');
-      setPriority(taskToEdit.priority || 'medium');
-      setStatus(taskToEdit.status || 'todo');
-      setDeadline(taskToEdit.deadline || '');
+    if (activeTask) {
+      setTitle(activeTask.title || '');
+      setDescription(activeTask.description || '');
+      setAssignedTo(activeTask.assigned_to || '');
+      setReviewerId(activeTask.reviewer_id || '');
+      setPriority(activeTask.priority || 'medium');
+      setStatus(activeTask.status || 'todo');
+      setDeadline(activeTask.deadline || '');
     } else {
       setTitle('');
       setDescription('');
@@ -48,7 +52,7 @@ export default function TaskModal({
       setDeadline('');
     }
     setError(null);
-  }, [taskToEdit, isOpen, initialStatus]);
+  }, [activeTask, isOpen, initialStatus]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -71,9 +75,9 @@ export default function TaskModal({
           status,
           deadline: deadline || null,
         };
-        const updated = await tasksService.update(taskToEdit.id, payload);
+        const updated = await tasksService.update(activeTask.id, payload);
         onClose();
-        if (onSaved) onSaved(updated);
+        if (notifySaved) notifySaved(updated);
       } else {
         const payload = {
           project_id: projectId,
@@ -87,7 +91,7 @@ export default function TaskModal({
         };
         const created = await tasksService.create(payload);
         onClose();
-        if (onSaved) onSaved(created);
+        if (notifySaved) notifySaved(created);
       }
     } catch (err) {
       setError(formatApiError(err, 'Failed to save task.'));

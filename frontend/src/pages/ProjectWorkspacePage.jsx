@@ -49,6 +49,7 @@ export default function ProjectWorkspacePage() {
 
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [taskToReview, setTaskToReview] = useState(null);
+  const [myAssessment, setMyAssessment] = useState(null);
 
   // Loading & error states
   const [loading, setLoading] = useState(true);
@@ -73,6 +74,14 @@ export default function ProjectWorkspacePage() {
       if (projData.team_id) {
         const teamData = await teamsService.get(projData.team_id);
         setTeamMembers(teamData.members || []);
+      }
+
+      // 4. Fetch authenticated student's rubric assessment if evaluated
+      try {
+        const assessmentData = await projectsService.getMyAssessment(projectId);
+        setMyAssessment(assessmentData);
+      } catch {
+        setMyAssessment(null);
       }
     } catch (err) {
       setError(formatApiError(err, 'Failed to load project workspace.'));
@@ -322,6 +331,33 @@ export default function ProjectWorkspacePage() {
             </button>
           </div>
         </div>
+
+        {/* Student Faculty Rubric Assessment Banner */}
+        {myAssessment && (
+          <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-heading font-bold text-emerald-900 dark:text-emerald-200">
+                  Your Faculty Evaluation:
+                </span>
+                <span className="font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                  {myAssessment.total_rubric_score} / 15
+                </span>
+                <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                  (Technical: {myAssessment.technical_score}/5, Documentation: {myAssessment.documentation_score}/5, Collaboration: {myAssessment.collaboration_score}/5)
+                </span>
+              </div>
+              {myAssessment.feedback && (
+                <p className="text-[11px] text-crew-text-secondary italic">
+                  "{myAssessment.feedback}"
+                </p>
+              )}
+            </div>
+            <div className="text-[10px] text-emerald-700 dark:text-emerald-300 sm:text-right flex-shrink-0">
+              Evaluator: {myAssessment.teacher_name || 'Faculty Supervisor'}
+            </div>
+          </div>
+        )}
 
         {/* View Switcher Tabs & Progress Strip matching Reference Image 1 */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-b border-crew-border/60 pb-3">

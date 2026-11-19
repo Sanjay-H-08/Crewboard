@@ -1,0 +1,76 @@
+name: Crewboard Release & Container Registry Publishing
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release Version Tag (e.g., v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      publish_latest:
+        description: "Tag as latest in Container Registry"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-images:
+    name: Build & Publish Container Images to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve Release Tags
+        id: meta
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          VERSION_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          SHA_TAG="sha-${{ github.sha }}"
+
+          echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
+          echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "sha_tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend:${{ steps.meta.outputs.version_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend:${{ steps.meta.outputs.sha_tag }}
+            ${{ (github.event.inputs.publish_latest == 'true' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/{0}/crewboard-backend:latest', steps.meta.outputs.repo_owner) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend:${{ steps.meta.outputs.version_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend:${{ steps.meta.outputs.sha_tag }}
+            ${{ (github.event.inputs.publish_latest == 'true' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/{0}/crewboard-frontend:latest', steps.meta.outputs.repo_owner) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

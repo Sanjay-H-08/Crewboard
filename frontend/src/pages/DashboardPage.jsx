@@ -1,15 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTeam } from '../context/TeamContext';
-import { projectsService, teamsService, tasksService, formatApiError } from '../services/api';
+import { projectsService, teamsService, tasksService, authService, formatApiError } from '../services/api';
 import ProjectCard from '../components/dashboard/ProjectCard';
 import MyTasksList from '../components/dashboard/MyTasksList';
 import ActivityFeed from '../components/dashboard/ActivityFeed';
+import WeeklyActivityChart from '../components/dashboard/WeeklyActivityChart';
+import TaskStatusDistributionChart from '../components/dashboard/TaskStatusDistributionChart';
+import ContributionTrendChart from '../components/dashboard/ContributionTrendChart';
+import UpcomingDeadlines from '../components/dashboard/UpcomingDeadlines';
+import RecentSubmissionsFeedback from '../components/dashboard/RecentSubmissionsFeedback';
+import StudentGamificationCard from '../components/dashboard/StudentGamificationCard';
 import EmptyState from '../components/common/EmptyState';
 import Button from '../components/common/Button';
 import { CardSkeleton } from '../components/common/Skeleton';
-import { isTaskOverdue } from '../utils/formatters';
+import { isTaskOverdue, formatDate } from '../utils/formatters';
+import { calculateStudentGamification } from '../utils/gamification';
 import {
   FolderKanban,
   CheckCircle2,
@@ -22,6 +29,7 @@ import {
   FolderPlus,
   ArrowRight,
   GraduationCap,
+  FileCheck,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -33,6 +41,8 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState([]);
   const [myTasks, setMyTasks] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [serverGamification, setServerGamification] = useState(null);
+  const [myAssessment, setMyAssessment] = useState(null);
 
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingActivities, setLoadingActivities] = useState(false);
@@ -57,7 +67,7 @@ export default function DashboardPage() {
       const projectList = await projectsService.list(activeTeamId);
       setProjects(projectList || []);
 
-      // 2. Fetch user's tasks in a single query via dedicated endpoint
+      // 2. Fetch user's tasks across projects
       const allUserTasks = await tasksService.getMyTasks();
       const teamUserTasks = (allUserTasks || []).filter((t) => t.team_id === activeTeamId);
       setMyTasks(teamUserTasks);
@@ -73,7 +83,7 @@ export default function DashboardPage() {
     if (!activeTeamId) return;
     setLoadingActivities(true);
     try {
-      const feed = await teamsService.getActivity(activeTeamId, { limit: 15 });
+      const feed = await teamsService.getActivity(activeTeamId, { limit: 25 });
       setActivities(feed || []);
     } catch {
       setActivities([]);
@@ -82,10 +92,21 @@ export default function DashboardPage() {
     }
   }, [activeTeamId]);
 
+  // Load backend-calculated gamification stats as the source of truth
+  const loadGamification = useCallback(async () => {
+    try {
+      const data = await authService.getGamification(activeTeamId);
+      setServerGamification(data);
+    } catch {
+      setServerGamification(null);
+    }
+  }, [activeTeamId]);
+
   useEffect(() => {
     loadDashboardData();
     loadActivityFeed();
-  }, [loadDashboardData, loadActivityFeed, projectRefreshTrigger]);
+    loadGamification();
+  }, [loadDashboardData, loadActivityFeed, loadGamification, projectRefreshTrigger]);
 
   function copyJoinCode() {
     if (!activeTeam?.join_code) return;
@@ -94,10 +115,55 @@ export default function DashboardPage() {
     setTimeout(() => setCodeCopied(false), 2500);
   }
 
-  // KPI Calculations
-  const overdueTasksCount = myTasks.filter((t) => isTaskOverdue(t)).length;
+  // Personal Metrics
+  const totalTasksCount = myTasks.length;
   const inProgressCount = myTasks.filter((t) => t.status === 'in_progress').length;
+  const inReviewCount = myTasks.filter((t) => t.status === 'submitted').length;
+  const changesRequestedCount = myTasks.filter((t) => t.status === 'changes_requested').length;
   const completedTasksCount = myTasks.filter((t) => t.status === 'done').length;
+  const overdueTasksCount = myTasks.filter((t) => isTaskOverdue(t)).length;
+
+  // Active Project (first active project in the team)
+  const primaryProject = useMemo(() => {
+    if (!projects || projects.length === 0) return null;
+    return projects.find((p) => p.status === 'active') || projects[0];
+  }, [projects]);
+
+  // Load current student's rubric assessment on the active primary project
+  useEffect(() => {
+    if (!primaryProject?.id) {
+      setMyAssessment(null);
+      return;
+    }
+    projectsService
+      .getMyAssessment(primaryProject.id)
+      .then((data) => setMyAssessment(data))
+      .catch(() => setMyAssessment(null));
+  }, [primaryProject?.id]);
+
+  const teamTotalDeliverables = primaryProject?.total_tasks || 0;
+  const teamCompletedDeliverables = primaryProject?.completed_tasks || 0;
+  const teamProgressPercentage =
+    teamTotalDeliverables > 0
+      ? Math.round((teamCompletedDeliverables / teamTotalDeliverables) * 100)
+      : 0;
+
+  // Calculate verifiable, balanced student gamification stats (client fallback if server is unreachable)
+  const localGamification = useMemo(() => {
+    return calculateStudentGamification(myTasks, activities, teamProgressPercentage, user?.id);
+  }, [myTasks, activities, teamProgressPercentage, user?.id]);
+
+  // Server-calculated values serve as primary source of truth
+  const gamification = serverGamification || localGamification;
+
+  // Today's formatted date string for modern productivity header
+  const todayFormatted = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, []);
 
   // Handle case where user has no teams at all
   if (!loadingProjects && teams.length === 0) {
@@ -111,7 +177,7 @@ export default function DashboardPage() {
             Welcome to Crewboard, {user?.full_name}!
           </h1>
           <p className="text-xs sm:text-sm text-crew-text-secondary max-w-md mx-auto mb-8 leading-relaxed">
-            Crewboard organizes student group projects with transparent task ownership and objective
+            Crewboard organizes student group assignments with transparent deliverable ownership and objective
             contribution analytics. To begin, create your team workspace or enter an existing join code.
           </p>
 
@@ -120,7 +186,7 @@ export default function DashboardPage() {
               Create a Team
             </Button>
             <Button onClick={openJoinTeam} variant="outline" size="md">
-              Join with Code
+              Join Team with Code
             </Button>
           </div>
         </div>
@@ -130,169 +196,213 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      {/* Personalized Greeting & Context Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-crew-border/60">
-        <div>
-          <h1 className="font-heading text-2xl sm:text-3xl font-bold text-crew-text-primary tracking-tight">
-            Welcome back, {user?.full_name?.split(' ')[0] || 'Teammate'}
-          </h1>
-          <p className="text-xs sm:text-sm text-crew-text-secondary mt-1">
-            Active workspace:{' '}
-            <strong className="text-crew-text-primary font-semibold">{activeTeam?.name}</strong>
-            {activeTeam?.description && <span> — {activeTeam.description}</span>}
-          </p>
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-medium border border-rose-200 dark:border-rose-800/40">
+          {error}
         </div>
+      )}
 
-        {/* Quick Action Buttons matching Reference Image 1 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={openCreateProject}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-[#181B20] text-white hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-all shadow-sm"
-          >
-            <FolderPlus className="w-3.5 h-3.5" />
-            <span>New Project</span>
-          </button>
-          <button
-            type="button"
-            onClick={openJoinTeam}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-xl border border-crew-border bg-crew-surface hover:bg-crew-bg text-crew-text-primary transition-colors shadow-subtle"
-          >
-            Join Code
-          </button>
-          <button
-            type="button"
-            onClick={openCreateTeam}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-xl text-crew-text-secondary hover:text-crew-text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          >
-            New Team
-          </button>
+      {/* 1. Modern Welcome Hero Banner */}
+      <div className="bg-crew-surface border border-crew-border rounded-3xl p-6 sm:p-8 shadow-subtle relative overflow-hidden">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-crew-bg border border-crew-border text-crew-text-secondary font-mono">
+                {todayFormatted}
+              </span>
+              {activeTeam && (
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/40 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Team: {activeTeam.name}</span>
+                </span>
+              )}
+            </div>
+
+            <h1 className="font-heading text-2xl sm:text-3xl font-extrabold text-crew-text-primary tracking-tight">
+              Good day, {user?.full_name ? user.full_name.split(' ')[0] : 'Scholar'}
+            </h1>
+            <p className="text-xs sm:text-sm text-crew-text-secondary max-w-xl leading-relaxed">
+              Here is your current progress overview across team deliverables, verified submissions, and upcoming milestones.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap flex-shrink-0">
+            {isTeacher && (
+              <Link to="/teacher">
+                <Button variant="outline" size="sm" icon={GraduationCap}>
+                  Teacher Supervision Portal
+                </Button>
+              </Link>
+            )}
+            <Button onClick={openCreateProject} size="sm" icon={Plus}>
+              New Deliverable
+            </Button>
+            {activeTeam && (
+              <Link to={`/teams/${activeTeam.id}`}>
+                <Button variant="outline" size="sm" icon={Users}>
+                  Team Overview
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
-      {isTeacher && (
-        <div className="p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0">
-              <GraduationCap className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-heading font-semibold text-sm text-crew-text-primary">
-                Teacher & Supervisor Portal
-              </h3>
-              <p className="text-xs text-crew-text-secondary">
-                Publish curriculum projects, assign teams, extend deadlines, and export performance reports.
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/teacher"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 transition-colors shadow-sm flex-shrink-0"
-          >
-            <span>Open Portal</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/40 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-center justify-between">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={loadDashboardData}
-            className="underline hover:no-underline font-semibold"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* KPI Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        {/* Metric 1 */}
-        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle">
-          <div className="flex items-center justify-between text-crew-text-secondary text-xs mb-2 font-medium">
-            <span>Team Projects</span>
+      {/* 2. Key Metrics Row (Modern Productivity Cards) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
+        {/* Total Deliverables */}
+        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle space-y-2">
+          <div className="flex items-center justify-between text-xs text-crew-text-secondary font-medium">
+            <span>My Tasks</span>
             <FolderKanban className="w-4 h-4 text-crew-text-tertiary" />
           </div>
           <div className="font-heading text-2xl sm:text-3xl font-bold text-crew-text-primary">
-            {projects.length}
+            {totalTasksCount}
           </div>
-          <p className="text-[11px] text-crew-text-tertiary mt-1">In active team</p>
+          <p className="text-[11px] text-crew-text-tertiary">Assigned to you</p>
         </div>
 
-        {/* Metric 2 */}
-        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle">
-          <div className="flex items-center justify-between text-crew-text-secondary text-xs mb-2 font-medium">
-            <span>Assigned to Me</span>
+        {/* In Progress */}
+        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle space-y-2">
+          <div className="flex items-center justify-between text-xs text-crew-text-secondary font-medium">
+            <span>In Progress</span>
             <Clock className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="font-heading text-2xl sm:text-3xl font-bold text-crew-text-primary">
-            {myTasks.length}
+          <div className="font-heading text-2xl sm:text-3xl font-bold text-amber-600 dark:text-amber-400">
+            {inProgressCount}
           </div>
-          <p className="text-[11px] text-crew-text-tertiary mt-1">
-            {inProgressCount} currently in progress
+          <p className="text-[11px] text-crew-text-tertiary">Actively underway</p>
+        </div>
+
+        {/* In Review */}
+        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle space-y-2">
+          <div className="flex items-center justify-between text-xs text-crew-text-secondary font-medium">
+            <span>Under Review</span>
+            <FileCheck className="w-4 h-4 text-purple-500" />
+          </div>
+          <div className="font-heading text-2xl sm:text-3xl font-bold text-purple-600 dark:text-purple-400">
+            {inReviewCount}
+          </div>
+          <p className="text-[11px] text-crew-text-tertiary">
+            {changesRequestedCount > 0 ? `${changesRequestedCount} need revision` : 'Awaiting feedback'}
           </p>
         </div>
 
-        {/* Metric 3 */}
-        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle">
-          <div className="flex items-center justify-between text-crew-text-secondary text-xs mb-2 font-medium">
-            <span>Completed by Me</span>
+        {/* Completed */}
+        <div className="bg-crew-surface border border-crew-border rounded-2xl p-4 sm:p-5 shadow-subtle space-y-2">
+          <div className="flex items-center justify-between text-xs text-crew-text-secondary font-medium">
+            <span>Completed</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="font-heading text-2xl sm:text-3xl font-bold text-crew-text-primary">
+          <div className="font-heading text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400">
             {completedTasksCount}
           </div>
-          <p className="text-[11px] text-crew-text-tertiary mt-1">Tasks resolved</p>
+          <p className="text-[11px] text-crew-text-tertiary">Verified and approved</p>
         </div>
 
-        {/* Metric 4 */}
+        {/* Overdue */}
         <div
-          className={`border rounded-2xl p-4 sm:p-5 shadow-subtle ${
+          className={`col-span-2 lg:col-span-1 border rounded-2xl p-4 sm:p-5 shadow-subtle space-y-2 transition-colors ${
             overdueTasksCount > 0
-              ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/40'
+              ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200/80 dark:border-rose-900/40'
               : 'bg-crew-surface border-crew-border'
           }`}
         >
-          <div className="flex items-center justify-between text-xs mb-2 font-medium">
-            <span className={overdueTasksCount > 0 ? 'text-rose-600 font-semibold' : 'text-crew-text-secondary'}>
-              Overdue Deliverables
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span className={overdueTasksCount > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-crew-text-secondary'}>
+              Overdue
             </span>
             <AlertTriangle
               className={`w-4 h-4 ${
-                overdueTasksCount > 0 ? 'text-rose-600' : 'text-crew-text-tertiary'
+                overdueTasksCount > 0 ? 'text-rose-600 animate-pulse' : 'text-crew-text-tertiary'
               }`}
             />
           </div>
           <div
             className={`font-heading text-2xl sm:text-3xl font-bold ${
-              overdueTasksCount > 0 ? 'text-rose-600' : 'text-crew-text-primary'
+              overdueTasksCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-crew-text-primary'
             }`}
           >
             {overdueTasksCount}
           </div>
           <p
-            className={`text-[11px] mt-1 ${
-              overdueTasksCount > 0 ? 'text-rose-600 font-medium' : 'text-crew-text-tertiary'
+            className={`text-[11px] ${
+              overdueTasksCount > 0 ? 'text-rose-600 dark:text-rose-300 font-medium' : 'text-crew-text-tertiary'
             }`}
           >
-            {overdueTasksCount > 0 ? 'Requires immediate attention' : 'All milestones on schedule'}
+            {overdueTasksCount > 0 ? 'Needs immediate focus' : 'Zero overdue items'}
           </p>
         </div>
       </div>
 
-      {/* Main 2-Column Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
-        {/* Left 8 Cols: Projects & My Tasks */}
-        <div className="lg:col-span-8 space-y-6 sm:space-y-8">
-          {/* Active Projects */}
+      {/* 3. Assignment Progress Overview Banner */}
+      {primaryProject && (
+        <div className="bg-crew-surface border border-crew-border rounded-2xl p-6 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1.5 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-crew-text-tertiary font-heading">
+                Active Assignment Progress
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-crew-bg border border-crew-border font-medium text-crew-text-secondary">
+                {primaryProject.name}
+              </span>
+            </div>
+            <h3 className="font-heading text-lg font-bold text-crew-text-primary">
+              {teamCompletedDeliverables} of {teamTotalDeliverables} deliverables completed
+            </h3>
+            <p className="text-xs text-crew-text-secondary leading-relaxed">
+              Target Deadline:{' '}
+              <strong className="text-crew-text-primary">
+                {primaryProject.deadline ? formatDate(primaryProject.deadline) : 'Ongoing Project'}
+              </strong>
+            </p>
+          </div>
+
+          <div className="w-full md:w-72 space-y-2 flex-shrink-0">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-crew-text-primary">Team Milestone</span>
+              <span className="font-mono font-bold text-crew-action">{teamProgressPercentage}%</span>
+            </div>
+            <div className="w-full h-2.5 rounded-full bg-crew-bg border border-crew-border/60 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[#181B20] dark:bg-white transition-all duration-500"
+                style={{ width: `${teamProgressPercentage}%` }}
+              />
+            </div>
+            <div className="flex justify-end pt-1">
+              <Link
+                to={`/projects/${primaryProject.id}`}
+                className="text-xs font-semibold text-crew-text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <span>Open Kanban Board</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Main Two-Column Content Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column (8 cols): Projects, My Tasks, Activity Chart, Deadlines */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Visual Analytics Suite: Weekly Activity Velocity, Status Distribution & Contribution Trend */}
+          <WeeklyActivityChart activities={activities} myTasks={myTasks} />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <TaskStatusDistributionChart tasks={myTasks} />
+            <ContributionTrendChart tasks={myTasks} activities={activities} />
+          </div>
+
+          {/* Upcoming Deadlines Radar */}
+          <UpcomingDeadlines tasks={myTasks} />
+
+          {/* Active Projects Grid */}
           <section className="space-y-3.5">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="font-heading text-base sm:text-lg font-bold text-crew-text-primary tracking-tight">
-                  Team Projects
+                  Team Deliverables & Projects
                 </h2>
                 <p className="text-xs text-crew-text-secondary">
                   Active milestones and sprint goals for {activeTeam?.name}
@@ -305,7 +415,7 @@ export default function DashboardPage() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-crew-border bg-crew-surface hover:bg-crew-bg text-crew-text-primary transition-colors shadow-subtle"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>New Project</span>
+                <span>New Deliverable</span>
               </button>
             </div>
 
@@ -332,7 +442,7 @@ export default function DashboardPage() {
             )}
           </section>
 
-          {/* Tasks Assigned to Current User */}
+          {/* Tasks Assigned to Current User Checklist */}
           <section className="space-y-3.5">
             <div className="flex items-center justify-between">
               <div>
@@ -352,9 +462,15 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Right 4 Cols: Join Code + Team Activity + Overview Link */}
+        {/* Right Column (4 cols): Gamification, Submissions Feedback, Invitation Code, Activity Feed */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Join Code Widget */}
+          {/* Verifiable Gamification & Achievements */}
+          <StudentGamificationCard gamification={gamification} />
+
+          {/* Recent Submissions & Feedback */}
+          <RecentSubmissionsFeedback tasks={myTasks} teacherAssessment={myAssessment} />
+
+          {/* Team Invitation Code Widget */}
           {activeTeam && (
             <div className="bg-crew-surface border border-crew-border rounded-2xl p-5 shadow-subtle space-y-3">
               <div className="flex items-center justify-between">

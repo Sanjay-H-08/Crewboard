@@ -287,3 +287,159 @@ def test_submission_security_bypasses_and_teacher_restrictions(client, create_us
                 found_collision = True
     assert found_collision is False
 
+
+def test_submission_upload_2mb_pptx_and_multi_attachment_matrix(client, create_user):
+    """Verify that a 2 MB PPTX, valid PDF, and multiple attachments succeed, while files >25MB and outsiders are rejected."""
+    import zipfile
+
+    leader = create_user(name="Team Lead")
+    member = create_user(name="Submitter Member")
+    outsider = create_user(name="Outsider Student")
+
+    team = client.post("/api/teams", json={"name": "Digital Logic Team"}, headers=leader["headers"]).json()
+    client.post("/api/teams/join", json={"join_code": team["join_code"]}, headers=member["headers"])
+
+    proj = client.post(
+        "/api/projects",
+        json={"team_id": team["id"], "name": "BCD Adder Milestone"},
+        headers=leader["headers"],
+    ).json()
+
+    task = client.post(
+        "/api/tasks",
+        json={
+            "project_id": proj["id"],
+            "title": "BCD Adder Design and Simulation",
+            "assigned_to": member["user"]["id"],
+            "status": "in_progress",
+        },
+        headers=leader["headers"],
+    ).json()
+
+    # Helper: Create realistic valid PPTX with OpenXML structure and target size
+    def make_pptx(target_size=2 * 1024 * 1024):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr(
+                "[Content_Types].xml",
+                b'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+            )
+            zf.writestr(
+                "ppt/presentation.xml",
+                b'<?xml version="1.0" encoding="UTF-8"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>',
+            )
+            current_len = buf.tell()
+            padding = max(target_size - current_len - 150, 1024)
+            zf.writestr("ppt/slides/slide1.xml", b"0" * padding)
+        buf.seek(0)
+        return buf
+
+    # 1. Test 2 MB PPTX upload succeeds (matching the exact reported issue file)
+    pptx_2mb = make_pptx(target_size=2 * 1024 * 1024)
+    res_pptx = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        data={"notes": "BCD-Adder with correction logic implemented and verified."},
+        files=[
+            (
+                "files",
+                (
+                    "BCD-Adder-Using-Correction-Logic-updated (1).pptx",
+                    pptx_2mb,
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ),
+            )
+        ],
+        headers=member["headers"],
+    )
+    assert res_pptx.status_code == 201, f"Upload failed: {res_pptx.text}"
+    pptx_sub = res_pptx.json()
+    assert pptx_sub["version"] == 1
+    assert pptx_sub["status"] == "submitted"
+    assert len(pptx_sub["files"]) == 1
+    assert pptx_sub["files"][0]["original_filename"] == "BCD-Adder-Using-Correction-Logic-updated (1).pptx"
+    assert pptx_sub["files"][0]["file_size_bytes"] >= 2 * 1024 * 1024
+
+    # 2. Test valid PDF upload succeeds (as revision 2)
+    valid_pdf = io.BytesIO(b"%PDF-1.4 Logic Gate Truth Tables and Timing Diagrams")
+    res_pdf = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        data={"notes": "Added timing diagrams in PDF format."},
+        files=[("files", ("timing_diagrams.pdf", valid_pdf, "application/pdf"))],
+        headers=member["headers"],
+    )
+    assert res_pdf.status_code == 201
+    pdf_sub = res_pdf.json()
+    assert pdf_sub["version"] == 2
+    assert len(pdf_sub["files"]) == 1
+    assert pdf_sub["files"][0]["original_filename"] == "timing_diagrams.pdf"
+
+    # 3. Test multiple attachments in a single submission (revision 3)
+    multi_pptx = make_pptx(target_size=1 * 1024 * 1024)
+    multi_pdf = io.BytesIO(b"%PDF-1.4 Circuit Schematics")
+    multi_zip = io.BytesIO()
+    with zipfile.ZipFile(multi_zip, "w") as zf:
+        zf.writestr("testbench.v", b"module tb; endmodule")
+    multi_zip.seek(0)
+
+    res_multi = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        data={"notes": "Complete project package with slides, schematic, and Verilog testbench."},
+        files=[
+            (
+                "files",
+                (
+                    "presentation.pptx",
+                    multi_pptx,
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ),
+            ),
+            ("files", ("schematic.pdf", multi_pdf, "application/pdf")),
+            ("files", ("verilog_src.zip", multi_zip, "application/zip")),
+        ],
+        headers=member["headers"],
+    )
+    assert res_multi.status_code == 201
+    multi_sub = res_multi.json()
+    assert multi_sub["version"] == 3
+    assert len(multi_sub["files"]) == 3
+    filenames = [f["original_filename"] for f in multi_sub["files"]]
+    assert "presentation.pptx" in filenames
+    assert "schematic.pdf" in filenames
+    assert "verilog_src.zip" in filenames
+
+    # 4. Test file larger than 25 MB is rejected with 413
+    huge_buf = io.BytesIO(b"0" * (25 * 1024 * 1024 + 1024))
+    res_huge = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        files=[("files", ("huge_archive.zip", huge_buf, "application/zip"))],
+        headers=member["headers"],
+    )
+    assert res_huge.status_code == 413
+    assert "exceeds maximum allowed size of 25mb" in res_huge.json()["detail"].lower()
+
+    # 5. Test unsupported file extensions are rejected with 400
+    bad_file = io.BytesIO(b"echo hello")
+    res_bad = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        files=[("files", ("script.sh", bad_file, "application/x-sh"))],
+        headers=member["headers"],
+    )
+    assert res_bad.status_code == 400
+    assert "unapproved format" in res_bad.json()["detail"].lower()
+
+    # 6. Test unauthorized user cannot upload to another team's task -> 403 Forbidden
+    outsider_buf = io.BytesIO(b"%PDF-1.4 Malicious attempt")
+    res_outsider = client.post(
+        f"/api/tasks/{task['id']}/submit",
+        files=[("files", ("injected.pdf", outsider_buf, "application/pdf"))],
+        headers=outsider["headers"],
+    )
+    assert res_outsider.status_code == 403
+
+    # 7. Verify submission records and attachments are persisted correctly in database
+    subs_list = client.get(f"/api/tasks/{task['id']}/submissions", headers=member["headers"]).json()
+    assert len(subs_list) == 3
+    latest = subs_list[0]
+    assert latest["version"] == 3
+    assert len(latest["files"]) == 3
+

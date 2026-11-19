@@ -1,7 +1,7 @@
 __pycache__
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
 env/
 venv/
@@ -13,4 +13,12 @@ htmlcov/
 .git
 .gitignore
 .env
-
+.env.*
+uploads/
+*.sqlite3
+*.db
+*.sql
+*.sql.gz
+*.dump
+tests/
+.DS_Store

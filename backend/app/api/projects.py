@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_user_project_or_403, get_user_team_or_403
 from app.db.session import get_db
+from app.models.assessment import StudentAssessment
 from app.models.project import Project
 from app.models.task import Task
 from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.schemas.analytics import ProjectAnalyticsResponse
+from app.schemas.assessment import StudentAssessmentResponse
 from app.schemas.project import (
     ProjectCreateRequest,
     ProjectDetailResponse,
@@ -68,17 +70,34 @@ def list_projects(
 ):
     """List projects for a specific team or across all user's teams."""
     if team_id:
-        get_user_team_or_403(db, team_id, current_user.id)
+        get_user_team_or_403(db, team_id, current_user)
         projects = db.query(Project).filter(Project.team_id == team_id).all()
     else:
-        # Retrieve teams current user belongs to
-        user_team_ids = [
-            tm.team_id
-            for tm in db.query(TeamMember.team_id)
-            .filter(TeamMember.user_id == current_user.id)
-            .all()
-        ]
-        projects = db.query(Project).filter(Project.team_id.in_(user_team_ids)).all()
+        if current_user.system_role == "teacher":
+            projects = (
+                db.query(Project)
+                .filter(
+                    (Project.teacher_id == current_user.id)
+                    | (Project.created_by == current_user.id)
+                )
+                .all()
+            )
+        else:
+            # Retrieve teams current user belongs to
+            user_team_ids = [
+                tm.team_id
+                for tm in db.query(TeamMember.team_id)
+                .filter(TeamMember.user_id == current_user.id)
+                .all()
+            ]
+            projects = (
+                db.query(Project)
+                .filter(
+                    (Project.team_id.in_(user_team_ids))
+                    | (Project.created_by == current_user.id)
+                )
+                .all()
+            )
 
     results: list[ProjectListResponse] = []
     for proj in projects:
@@ -140,3 +159,46 @@ def get_project_analytics(
     """Compute real-time project metrics, completion %, and workload distribution."""
     project = get_user_project_or_403(db, project_id, current_user.id)
     return calculate_project_analytics(db, project)
+
+
+@router.get("/{project_id}/my-assessment", response_model=StudentAssessmentResponse | None)
+def get_my_project_assessment(
+    project_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Retrieve authenticated student's own rubric assessment and teacher feedback for this project."""
+    get_user_project_or_403(db, project_id, current_user.id)
+
+    assessment_rec = (
+        db.query(StudentAssessment)
+        .filter(
+            StudentAssessment.project_id == project_id,
+            StudentAssessment.student_id == current_user.id,
+        )
+        .first()
+    )
+    if not assessment_rec:
+        return None
+
+    teacher = db.query(User).filter(User.id == assessment_rec.teacher_id).first()
+    total_rubric = (
+        assessment_rec.technical_score
+        + assessment_rec.documentation_score
+        + assessment_rec.collaboration_score
+    )
+    return StudentAssessmentResponse(
+        id=assessment_rec.id,
+        project_id=assessment_rec.project_id,
+        student_id=assessment_rec.student_id,
+        teacher_id=assessment_rec.teacher_id,
+        teacher_name=teacher.full_name if teacher else "Supervising Teacher",
+        technical_score=assessment_rec.technical_score,
+        documentation_score=assessment_rec.documentation_score,
+        collaboration_score=assessment_rec.collaboration_score,
+        total_rubric_score=total_rubric,
+        max_rubric_score=15,
+        feedback=assessment_rec.feedback,
+        created_at=assessment_rec.created_at,
+        updated_at=assessment_rec.updated_at,
+    )

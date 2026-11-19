@@ -1,6 +1,10 @@
+# ==============================================================================
+# CREWBOARD — DOCKER COMPOSE BASE TOPOLOGY
+# ==============================================================================
+
 services:
   # ----------------------------------------------------------------------------
-  # PostgreSQL Database Service
+  # PostgreSQL 16 Database
   # ----------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
@@ -10,8 +14,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-crewboard_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be provided via .env}
       POSTGRES_DB: ${POSTGRES_DB:-crewboard}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - crewboard_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +25,7 @@ services:
       - crewboard_network
 
   # ----------------------------------------------------------------------------
-  # FastAPI Backend Service
+  # FastAPI Backend Service (Python 3.11 + Alembic Migrations)
   # ----------------------------------------------------------------------------
   backend:
     build:
@@ -42,8 +44,6 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173}
       UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - crewboard_uploads:/app/uploads
     healthcheck:
@@ -51,12 +51,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     networks:
       - crewboard_network
 
   # ----------------------------------------------------------------------------
-  # React + Vite Frontend Service
+  # React + Vite Frontend Service (Nginx Reverse Proxy & Static Host)
   # ----------------------------------------------------------------------------
   frontend:
     build:
@@ -65,9 +65,13 @@ services:
     container_name: crewboard_frontend
     restart: unless-stopped
     depends_on:
-      - backend
-    ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     networks:
       - crewboard_network
 
@@ -79,4 +83,5 @@ volumes:
 
 networks:
   crewboard_network:
+    name: crewboard_network
     driver: bridge

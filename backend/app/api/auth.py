@@ -1,8 +1,9 @@
 """Authentication API endpoints."""
 
 from typing import Annotated
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,8 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, TokenResponse, UserRegisterRequest, UserResponse
+from app.schemas.gamification import GamificationSummaryResponse
+from app.services.gamification_service import calculate_user_gamification
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -77,3 +80,13 @@ def get_me(
 ):
     """Return authenticated caller's profile."""
     return current_user
+
+
+@router.get("/gamification", response_model=GamificationSummaryResponse)
+def get_my_gamification(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    team_id: uuid.UUID | None = Query(None, description="Optional team ID to scope team milestones to"),
+):
+    """Retrieve verifiable personal XP, level, badges, and team milestone achievements."""
+    return calculate_user_gamification(db, current_user, team_id=team_id)

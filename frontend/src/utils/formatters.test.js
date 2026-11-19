@@ -113,6 +113,10 @@ test('formatApiError handles FastAPI RFC error formats', () => {
   const err3 = { message: 'Network Error', code: 'ERR_NETWORK' };
   assert.match(formatApiError(err3), /Unable to connect/);
 
+  // HTTP 413 Payload Too Large (e.g. from reverse proxy or gateway without JSON detail)
+  const err4 = { response: { status: 413 }, message: 'Request failed with status code 413' };
+  assert.match(formatApiError(err4), /maximum 25MB per file/);
+
   // Fallback
   assert.equal(formatApiError(null, 'Custom fallback'), 'Custom fallback');
 });

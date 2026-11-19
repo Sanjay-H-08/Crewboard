@@ -74,14 +74,22 @@ def get_user_team_or_403(
             detail="Team not found.",
         )
 
-    user_id = current_user_or_id.id if isinstance(current_user_or_id, User) else current_user_or_id
-    is_teacher = isinstance(current_user_or_id, User) and current_user_or_id.system_role == "teacher"
+    if isinstance(current_user_or_id, User):
+        user_id = current_user_or_id.id
+        user = current_user_or_id
+    else:
+        user_id = current_user_or_id
+        user = db.query(User).filter(User.id == user_id).first()
+    is_teacher = user is not None and user.system_role == "teacher"
 
-    # Teachers can view teams that have projects assigned to them
+    # Teachers can view teams that have projects assigned to them or created by them
     if is_teacher:
         supervised_project = (
             db.query(Project)
-            .filter(Project.team_id == team_id, Project.teacher_id == user_id)
+            .filter(
+                Project.team_id == team_id,
+                (Project.teacher_id == user_id) | (Project.created_by == user_id),
+            )
             .first()
         )
         if supervised_project:
@@ -112,15 +120,20 @@ def get_user_project_or_403(
             detail="Project not found.",
         )
 
-    user_id = current_user_or_id.id if isinstance(current_user_or_id, User) else current_user_or_id
-    is_teacher = isinstance(current_user_or_id, User) and current_user_or_id.system_role == "teacher"
+    if isinstance(current_user_or_id, User):
+        user_id = current_user_or_id.id
+        user = current_user_or_id
+    else:
+        user_id = current_user_or_id
+        user = db.query(User).filter(User.id == user_id).first()
+    is_teacher = user is not None and user.system_role == "teacher"
 
-    if is_teacher and project.teacher_id == user_id:
+    if is_teacher and (project.teacher_id == user_id or project.created_by == user_id):
         return project
 
     if project.team_id is None:
         # Unassigned project template can only be viewed by its creator/teacher
-        if project.created_by == user_id or (is_teacher and project.teacher_id == user_id):
+        if project.created_by == user_id or (is_teacher and (project.teacher_id == user_id or project.created_by == user_id)):
             return project
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

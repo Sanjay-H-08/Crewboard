@@ -4,7 +4,7 @@ import Button from '../common/Button';
 import { tasksService, formatApiError } from '../../services/api';
 import { Upload, FileText, X, AlertCircle } from 'lucide-react';
 
-export default function SubmissionModal({ isOpen, onClose, task, onSubmitted }) {
+export default function SubmissionModal({ isOpen, onClose, task, onSubmitted, onSuccess }) {
   const [notes, setNotes] = useState('');
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -12,12 +12,14 @@ export default function SubmissionModal({ isOpen, onClose, task, onSubmitted }) 
 
   if (!task) return null;
 
+  const notifySubmitted = onSubmitted || onSuccess;
+
   function handleFileChange(e) {
     const selected = Array.from(e.target.files || []);
     // Validate individual file sizes (25MB limit)
     const oversized = selected.find((f) => f.size > 25 * 1024 * 1024);
     if (oversized) {
-      setError(`File "${oversized.name}" exceeds the 25MB limit.`);
+      setError(`File "${oversized.name}" (${(oversized.size / (1024 * 1024)).toFixed(2)} MB) exceeds the 25MB individual file limit.`);
       return;
     }
     setError(null);
@@ -30,6 +32,7 @@ export default function SubmissionModal({ isOpen, onClose, task, onSubmitted }) 
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (loading) return; // Prevent duplicate submissions while in flight
     if (!notes.trim() && files.length === 0) {
       setError('Please provide submission notes or attach at least one deliverable file.');
       return;
@@ -51,8 +54,8 @@ export default function SubmissionModal({ isOpen, onClose, task, onSubmitted }) 
       setNotes('');
       setFiles([]);
       onClose();
-      if (onSubmitted) {
-        onSubmitted(submission);
+      if (notifySubmitted) {
+        notifySubmitted(submission);
       }
     } catch (err) {
       setError(formatApiError(err, 'Failed to submit deliverable work.'));
@@ -141,10 +144,10 @@ export default function SubmissionModal({ isOpen, onClose, task, onSubmitted }) 
         </div>
 
         <div className="pt-3 border-t border-crew-border flex items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" loading={loading} icon={Upload}>
+          <Button type="submit" loading={loading} disabled={loading} icon={Upload}>
             Submit for Review
           </Button>
         </div>

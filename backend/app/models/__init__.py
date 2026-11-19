@@ -1,6 +1,7 @@
 """SQLAlchemy ORM models export."""
 
 from app.models.activity import ActivityLog
+from app.models.assessment import StudentAssessment
 from app.models.chat import TeamMessage
 from app.models.project import Project
 from app.models.submission import SubmissionFile, TaskSubmission
@@ -18,4 +19,5 @@ __all__ = [
     "TaskSubmission",
     "SubmissionFile",
     "TeamMessage",
+    "StudentAssessment",
 ]

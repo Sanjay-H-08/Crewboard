@@ -16,7 +16,7 @@ if test -z "$SCRIPT_DIR"; or test "$SCRIPT_DIR" = "."
     set SCRIPT_DIR (pwd)
 end
 cd "$SCRIPT_DIR"
-set -l REPO_ROOT (pwd)
+set -g REPO_ROOT (pwd)
 
 # ------------------------------------------------------------------------------
 # Helper Functions & Environment Detection
@@ -281,3 +281,4 @@ switch "$action"
         echo "Run './crewboard.fish help' for available commands." >&2
         exit 1
 end
+

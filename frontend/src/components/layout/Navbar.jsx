@@ -13,6 +13,8 @@ import {
   Check,
   FolderKanban,
 } from 'lucide-react';
+import NotificationCenter from './NotificationCenter';
+import ThemeToggle from '../common/ThemeToggle';
 
 export default function Navbar({ onOpenCreateTeam, onOpenJoinTeam, onOpenCreateProject }) {
   const { user, logout } = useAuth();
@@ -83,12 +85,9 @@ export default function Navbar({ onOpenCreateTeam, onOpenJoinTeam, onOpenCreateP
                 <div className="px-3 py-1.5 text-xs font-semibold text-crew-text-secondary uppercase tracking-wider font-heading border-b border-crew-border/60">
                   Your Teams
                 </div>
-
                 <div className="max-h-56 overflow-y-auto py-1">
                   {teams.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-crew-text-secondary italic">
-                      No teams joined yet
-                    </div>
+                    <div className="px-3 py-2 text-xs text-crew-text-secondary italic">No teams joined yet</div>
                   ) : (
                     teams.map((team) => {
                       const isSelected = team.id === activeTeamId;
@@ -104,72 +103,61 @@ export default function Navbar({ onOpenCreateTeam, onOpenJoinTeam, onOpenCreateP
                             isSelected ? 'font-semibold text-crew-action bg-crew-sand/10' : 'text-crew-text-primary'
                           }`}
                         >
-                          <span className="truncate">{team.name}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-crew-action flex-shrink-0" />}
+                          <span className="flex-1 truncate">{team.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-crew-action" />}
                         </button>
                       );
                     })
                   )}
                 </div>
-
-                <div className="pt-1.5 mt-1 border-t border-crew-border/60 px-1 space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTeamDropdownOpen(false);
-                      onOpenCreateTeam();
-                    }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-sm text-xs font-medium text-crew-action hover:bg-crew-sand/20 flex items-center gap-2 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Create New Team
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTeamDropdownOpen(false);
-                      onOpenJoinTeam();
-                    }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-sm text-xs font-medium text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg flex items-center gap-2 transition-colors"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    Join Team with Code
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={onOpenCreateTeam}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-crew-text-primary hover:bg-crew-bg"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create New Team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeamDropdownOpen(false);
+                    onOpenJoinTeam();
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded-sm text-xs font-medium text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg flex items-center gap-2 transition-colors"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  Join Team with Code
+                </button>
               </div>
             )}
           </div>
+        </div>
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
+        {/* Navigation Links */}
+        <nav className="hidden md:flex items-center gap-1">
+          <Link
+            to="/dashboard"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              isDashboard ? 'text-crew-action bg-crew-action/10 font-semibold' : 'text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Dashboard
+          </Link>
+
+          {activeTeamId && (
             <Link
-              to="/dashboard"
+              to={`/teams/${activeTeamId}`}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                isDashboard
-                  ? 'text-crew-action bg-crew-action/10 font-semibold'
-                  : 'text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg'
+                isTeamOverview ? 'text-crew-action bg-crew-action/10 font-semibold' : 'text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg'
               }`}
             >
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
+              <FolderKanban className="w-4 h-4" />
+              Team & Analytics
             </Link>
-
-            {activeTeamId && (
-              <Link
-                to={`/teams/${activeTeamId}`}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  isTeamOverview
-                    ? 'text-crew-action bg-crew-action/10 font-semibold'
-                    : 'text-crew-text-secondary hover:text-crew-text-primary hover:bg-crew-bg'
-                }`}
-              >
-                <FolderKanban className="w-4 h-4" />
-                Team & Analytics
-              </Link>
-            )}
-          </nav>
-        </div>
+          )}
+        </nav>
 
         {/* Right: Actions + Profile Menu */}
         <div className="flex items-center gap-3">
@@ -183,6 +171,10 @@ export default function Navbar({ onOpenCreateTeam, onOpenJoinTeam, onOpenCreateP
               New Project
             </button>
           )}
+          {/* Notification Center */}
+          <NotificationCenter />
+          {/* Theme Toggle */}
+          <ThemeToggle compact={true} />
 
           {/* User Profile Dropdown */}
           <div className="relative" ref={userDropdownRef}>
@@ -205,14 +197,9 @@ export default function Navbar({ onOpenCreateTeam, onOpenJoinTeam, onOpenCreateP
             {userDropdownOpen && (
               <div className="absolute right-0 mt-1.5 w-56 bg-crew-surface rounded-md border border-crew-border shadow-card py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
                 <div className="px-3.5 py-2 border-b border-crew-border/60">
-                  <div className="text-xs font-semibold text-crew-text-primary truncate">
-                    {user?.full_name}
-                  </div>
-                  <div className="text-[11px] text-crew-text-secondary truncate mt-0.5">
-                    {user?.email}
-                  </div>
+                  <div className="text-xs font-semibold text-crew-text-primary truncate">{user?.full_name}</div>
+                  <div className="text-[11px] text-crew-text-secondary truncate mt-0.5">{user?.email}</div>
                 </div>
-
                 <div className="pt-1">
                   <button
                     type="button"

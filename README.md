@@ -232,8 +232,17 @@ npm run build
 ## 10. Automated CI/CD & Production Deployment
 
 - **Continuous Integration (`.github/workflows/ci.yml`)**: Every pull request and push to `main` runs automated backend pytest, frontend unit tests, ESLint, Alembic consistency checks, and BuildKit container builds.
-- **Container Registry (`.github/workflows/release.yml`)**: Publishes production container images tagged with immutable commit SHAs to GitHub Container Registry (GHCR).
-- **Production Deployment Guide**: For server provisioning, TLS reverse proxy setup (Caddy/Nginx), automated daily backups, and disaster recovery runbooks, refer to [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- **Container Registry Releases (`.github/workflows/release.yml`)**: Publishes production container images (`ghcr.io/sanjay-h-08/crewboard-backend` and `ghcr.io/sanjay-h-08/crewboard-frontend`) tagged with semantic versions and immutable commit SHAs to GitHub Container Registry (GHCR), gated strictly behind passing CI tests.
+- **Continuous Delivery (`.github/workflows/deploy.yml`)**: Manual, approval-gated CD pipeline that automates zero-downtime SSH deployment, pre-deployment database backups, safe Alembic migrations, container health verification, and automatic rollback.
+- **Operations & Disaster Recovery Scripts**:
+  - `./scripts/deploy.sh <tag>`: Automated production deployment with pre-flight checks and rollback.
+  - `./scripts/rollback.sh`: Instant rollback to the previous stable release.
+  - `./scripts/backup.sh`: Compressed, timestamped PostgreSQL dumps with 14-day retention.
+- **Documentation Guides**:
+  - [Continuous Integration & CD Pipeline](docs/CI_CD.md)
+  - [Production Deployment & Server Guide](docs/DEPLOYMENT.md)
+  - [Containerization & Docker Architecture](docs/DOCKER.md)
+  - [System Architecture & Domain Model](docs/ARCHITECTURE.md)
 
 ---
 

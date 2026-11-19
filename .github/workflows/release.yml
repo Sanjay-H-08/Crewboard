@@ -16,13 +16,124 @@ on:
         required: true
         default: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
 
 jobs:
+  # ============================================================================
+  # 1. Prerequisite CI Gate: Backend Validation & Pytest Suite
+  # ============================================================================
+  validate-backend:
+    name: Validate Backend (Pytest & Alembic)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: "Guard: Prevent Publishing from Arbitrary Feature Branches"
+        if: github.event_name == 'workflow_dispatch' && github.ref_name != 'main' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "ERROR: Releases may only be published from the 'main' branch or official 'v*.*.*' tags." >&2
+          echo "Attempted dispatch from: ${{ github.ref }}" >&2
+          exit 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Alembic Migration Consistency
+        run: |
+          python -c "
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          cfg = Config('alembic.ini')
+          script = ScriptDirectory.from_config(cfg)
+          heads = script.get_heads()
+          print(f'Alembic heads verified: {heads}')
+          assert len(heads) == 1, f'Expected exactly 1 migration head, found: {heads}'
+          "
+
+      - name: Run Pytest Test Suite
+        env:
+          ENVIRONMENT: "testing"
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: "test_secret_key_for_ci_environment_validation_32chars"
+        run: |
+          pytest -v --tb=short
+
+  # ============================================================================
+  # 2. Prerequisite CI Gate: Frontend Validation (Lint, Tests, Build)
+  # ============================================================================
+  validate-frontend:
+    name: Validate Frontend (Lint, Test & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Run ESLint Check
+        run: npm run lint
+
+      - name: Run Frontend Unit Tests
+        run: npm test
+
+      - name: Run Production Vite Build
+        run: npm run build
+
+  # ============================================================================
+  # 3. Prerequisite CI Gate: Docker Compose Configuration Validation
+  # ============================================================================
+  validate-docker-compose:
+    name: Validate Docker Compose Configurations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Test Environment Configuration
+        run: cp .env.example .env
+
+      - name: Validate Development Compose Configuration
+        run: docker compose config
+
+      - name: Validate Production Compose Configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+
+  # ============================================================================
+  # 4. GHCR Publishing Job (Gated strictly behind successful validation)
+  # ============================================================================
   publish-images:
     name: Build & Publish Container Images to GHCR
+    needs: [validate-backend, validate-frontend, validate-docker-compose]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -38,16 +149,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve Release Tags
+      - name: Resolve Release Metadata & Tags
         id: meta
         run: |
+          # Lowercase repository owner as required by GHCR naming specifications
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           VERSION_TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
           SHA_TAG="sha-${{ github.sha }}"
+          IS_LATEST="${{ (github.event.inputs.publish_latest == 'true' || startsWith(github.ref, 'refs/tags/v')) }}"
 
           echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
           echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
           echo "sha_tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+          echo "is_latest=${IS_LATEST}" >> $GITHUB_OUTPUT
+
+      - name: Generate Backend Metadata & Labels
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend
+          tags: |
+            type=raw,value=${{ steps.meta.outputs.version_tag }}
+            type=raw,value=${{ steps.meta.outputs.sha_tag }}
+            type=raw,value=latest,enable=${{ steps.meta.outputs.is_latest }}
+          labels: |
+            org.opencontainers.image.title=Crewboard Backend
+            org.opencontainers.image.description=FastAPI REST backend with PostgreSQL ORM for Crewboard
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v6
@@ -55,12 +183,24 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend:${{ steps.meta.outputs.version_tag }}
-            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend:${{ steps.meta.outputs.sha_tag }}
-            ${{ (github.event.inputs.publish_latest == 'true' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/{0}/crewboard-backend:latest', steps.meta.outputs.repo_owner) || '' }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate Frontend Metadata & Labels
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend
+          tags: |
+            type=raw,value=${{ steps.meta.outputs.version_tag }}
+            type=raw,value=${{ steps.meta.outputs.sha_tag }}
+            type=raw,value=latest,enable=${{ steps.meta.outputs.is_latest }}
+          labels: |
+            org.opencontainers.image.title=Crewboard Frontend
+            org.opencontainers.image.description=React SPA served via hardened Nginx for Crewboard
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and Push Frontend Image
         uses: docker/build-push-action@v6
@@ -68,9 +208,15 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend:${{ steps.meta.outputs.version_tag }}
-            ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend:${{ steps.meta.outputs.sha_tag }}
-            ${{ (github.event.inputs.publish_latest == 'true' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/{0}/crewboard-frontend:latest', steps.meta.outputs.repo_owner) || '' }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Summary of Published Release Images
+        run: |
+          echo "### 🚀 GHCR Images Published Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend:** \`ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-backend:${{ steps.meta.outputs.version_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend:** \`ghcr.io/${{ steps.meta.outputs.repo_owner }}/crewboard-frontend:${{ steps.meta.outputs.version_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest Tag Attached:** \`${{ steps.meta.outputs.is_latest }}\`" >> $GITHUB_STEP_SUMMARY

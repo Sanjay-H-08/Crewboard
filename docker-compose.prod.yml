@@ -26,11 +26,17 @@ services:
         condition: service_healthy
     networks:
       - crewboard_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # ----------------------------------------------------------------------------
   # React + Vite Frontend & Nginx Static Host (Internal Network Only)
   # ----------------------------------------------------------------------------
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/sanjay-h-08/crewboard-frontend:latest}
     restart: always
     # Isolated on internal network; all incoming traffic passes through Caddy TLS
     ports: []
@@ -44,6 +50,7 @@ services:
   # FastAPI Backend Service (Hardened Production: Internal Network Only)
   # ----------------------------------------------------------------------------
   backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/sanjay-h-08/crewboard-backend:latest}
     restart: always
     environment:
       ENVIRONMENT: production

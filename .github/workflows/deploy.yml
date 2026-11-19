@@ -1,0 +1,146 @@
+name: Crewboard Production Continuous Delivery (CD)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Release Version Tag or Git SHA to deploy (e.g., v1.0.0 or sha-b60f1a2)"
+        required: true
+        default: "v1.0.0"
+      deploy_environment:
+        description: "Target Deployment Environment"
+        type: choice
+        options:
+          - production
+          - staging
+        default: "production"
+      create_backup:
+        description: "Create automated PostgreSQL database backup before deployment"
+        type: boolean
+        required: true
+        default: true
+
+concurrency:
+  group: deployment-${{ github.event.inputs.deploy_environment || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Production Deployment Job with Protected Environment Approvals
+  # ============================================================================
+  deploy:
+    name: Deploy Release to Target Host
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.deploy_environment || 'production' }}
+      url: https://${{ secrets.DOMAIN || 'localhost' }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: "Guard: Validate Deployment Source Reference"
+        if: github.ref_name != 'main' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "ERROR: Deployments may only be triggered from the 'main' branch or official 'v*.*.*' tags." >&2
+          echo "Attempted deployment from reference: ${{ github.ref }}" >&2
+          exit 1
+
+      - name: Validate Deployment Tag & Target Parameters
+        id: validate
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [[ -z "$TAG" ]]; then
+            echo "ERROR: Image tag cannot be blank." >&2
+            exit 1
+          fi
+
+          if [[ "$TAG" == "latest" ]]; then
+            echo "ERROR: Deploying with floating 'latest' tag is prohibited in production." >&2
+            echo "Please specify an immutable semantic version (e.g., v1.0.0) or Git SHA tag (e.g., sha-b60f1a2)." >&2
+            exit 1
+          fi
+
+          # Sanitize tag to prevent command injection
+          if [[ ! "$TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "ERROR: Image tag contains invalid characters: ${TAG}" >&2
+            exit 1
+          fi
+
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
+
+      - name: Set up SSH Deployment Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure Known Hosts for Target Server
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [[ -z "$SSH_KNOWN_HOSTS" ]]; then
+            echo "ERROR: Secret 'SSH_KNOWN_HOSTS' is required for strict host verification." >&2
+            echo "To protect against MITM attacks, please populate SSH_KNOWN_HOSTS using: ssh-keyscan -H -p <PORT> <HOST>" >&2
+            exit 1
+          fi
+          echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Synchronize Application Configuration & Scripts
+        env:
+          SSH_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/crewboard' }}
+        run: |
+          echo "Synchronizing deployment artifacts to ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}..."
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "mkdir -p ${DEPLOY_PATH}/scripts ${DEPLOY_PATH}/backups"
+
+          # Securely transfer Compose definitions, Caddyfile, and operations scripts
+          # Note: Existing remote .env and persistent data volumes are preserved untouched!
+          scp -P "${SSH_PORT}" docker-compose.yml docker-compose.prod.yml Caddyfile "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/"
+          scp -P "${SSH_PORT}" scripts/*.sh "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/scripts/"
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "chmod +x ${DEPLOY_PATH}/scripts/*.sh"
+
+      - name: Authenticate Server to GHCR & Execute Automated Deployment
+        env:
+          SSH_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/crewboard' }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ steps.validate.outputs.tag }}
+          REPO_OWNER: ${{ steps.validate.outputs.repo_owner }}
+          RUN_BACKUP: ${{ github.event.inputs.create_backup }}
+        run: |
+          # Securely stream GHCR token over stdin without exposing in arguments or process listings
+          if [[ -n "${GHCR_TOKEN:-}" && -n "${GHCR_USER:-}" ]]; then
+            echo "Authenticating remote Docker daemon to GHCR via stdin stream..."
+            printf "%s" "${GHCR_TOKEN}" | ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" \
+              "docker login ghcr.io -u '${GHCR_USER}' --password-stdin >/dev/null 2>&1" || {
+              echo "Notice: Non-fatal GHCR login notification (packages may be public or token omitted)."
+            }
+          fi
+
+          echo "Executing automated deployment on remote production server..."
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" \
+            "cd '${DEPLOY_PATH}' && ./scripts/deploy.sh '${IMAGE_TAG}' '${REPO_OWNER}' '${RUN_BACKUP}'"
+
+      - name: Deployment Audit & Execution Summary
+        run: |
+          echo "### 🚀 Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Environment:** \`${{ github.event.inputs.deploy_environment || 'production' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed Version:** \`${{ steps.validate.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image:** \`ghcr.io/${{ steps.validate.outputs.repo_owner }}/crewboard-backend:${{ steps.validate.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image:** \`ghcr.io/${{ steps.validate.outputs.repo_owner }}/crewboard-frontend:${{ steps.validate.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed By:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database Backup Executed:** \`${{ github.event.inputs.create_backup }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Verified Health Status:** All services healthy" >> $GITHUB_STEP_SUMMARY

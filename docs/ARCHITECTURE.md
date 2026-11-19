@@ -105,3 +105,26 @@ The gamification engine (`backend/app/services/gamification_service.py`) calcula
 - **Punctuality Bonus**: 30 bonus XP for completions on or before the deadline.
 - **Peer Review Reward**: 25 XP per meaningful peer review (strictly capped per task).
 - **Streak Calculation**: Calculated on UTC calendar days to ensure timezone consistency.
+
+---
+
+## 5. Deployment & Release Architecture
+
+```text
+GitHub Push (main) ──> CI Pipeline (.github/workflows/ci.yml)
+                             │ (All tests, linter, builds pass)
+                             ▼
+Release Tag (v*.*.*) ──> GHCR Release (.github/workflows/release.yml)
+                             │ (Gated behind CI checks)
+                             ▼
+                    ghcr.io/sanjay-h-08/crewboard-backend
+                    ghcr.io/sanjay-h-08/crewboard-frontend
+                             │
+                             ▼ (Manual workflow_dispatch + Approval)
+                    CD Pipeline (.github/workflows/deploy.yml)
+                             │
+                             ├── Pre-deploy Backup (scripts/backup.sh)
+                             ├── Safe Alembic Migrations
+                             ├── Container Swap & Health Probes
+                             └── Automated Rollback on Failure (scripts/rollback.sh)
+```

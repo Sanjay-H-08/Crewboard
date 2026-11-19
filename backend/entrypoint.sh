@@ -22,6 +22,11 @@ if [ "$(id -u)" = "0" ]; then
         exec runuser -u crewboard -m -- "$0" "$@"
     elif command -v gosu >/dev/null 2>&1; then
         exec gosu crewboard "$0" "$@"
+    elif command -v su >/dev/null 2>&1; then
+        exec su -s /bin/sh crewboard -c "$0 $*"
+    else
+        echo "ERROR: Unable to drop root privileges to crewboard user (UID 1000). Aborting startup." >&2
+        exit 1
     fi
 else
     # When running directly as non-root (UID 1000)
@@ -60,9 +65,13 @@ for attempt in range(1, max_retries + 1):
         time.sleep(retry_interval)
 EOF
 
-# Execute database migrations
-echo "Applying database migrations via Alembic..."
-alembic upgrade head
+# Execute database migrations (enabled by default; toggleable via AUTO_MIGRATE=false or SKIP_MIGRATIONS=1)
+if [ "${AUTO_MIGRATE:-true}" = "true" ] && [ "${SKIP_MIGRATIONS:-0}" != "1" ]; then
+    echo "Applying database migrations via Alembic..."
+    alembic upgrade head
+else
+    echo "Notice: Automatic database migrations skipped by configuration (AUTO_MIGRATE=${AUTO_MIGRATE:-true}, SKIP_MIGRATIONS=${SKIP_MIGRATIONS:-0})."
+fi
 
 # Execute container command (defaults to uvicorn in Dockerfile)
 echo "Starting FastAPI application as non-root user (UID $(id -u))..."

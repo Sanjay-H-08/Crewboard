@@ -31,6 +31,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-crewboard-backend:local}
     container_name: crewboard_backend
     restart: unless-stopped
     depends_on:
@@ -62,6 +63,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: ${FRONTEND_IMAGE:-crewboard-frontend:local}
     container_name: crewboard_frontend
     restart: unless-stopped
     depends_on:

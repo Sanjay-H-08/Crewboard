@@ -1,6 +1,6 @@
 # Crewboard — Containerization & Docker Architecture Guide
 
-This document provides a comprehensive technical overview of the Docker configuration, container topology, persistent storage architecture, and health monitoring for **Crewboard**.
+This document provides a comprehensive technical overview of the Docker configuration, container topology, persistent storage architecture, security hardening, and health monitoring for **Crewboard**.
 
 ---
 
@@ -13,16 +13,16 @@ Crewboard executes as a multi-tier containerized stack orchestrated via Docker C
                                |              Web Browser               |
                                +----------------------------------------+
                                                    |
-                                                   | HTTP (Port 5173 or 80)
+                                                   | HTTP (Port 5173 or 80) / HTTPS (Port 443)
                                                    v
 +---------------------------------------------------------------------------------------------------+
 |  Docker Network: crewboard_network (bridge)                                                       |
 |                                                                                                   |
 |  +-------------------------------------+                +---------------------------------------+ |
 |  | Container: crewboard_frontend       |                | Container: crewboard_backend          | |
-|  | Image: crewboard-frontend:latest    |                | Image: crewboard-backend:latest       | |
+|  | Image: GHCR / Local Build           |                | Image: GHCR / Local Build             | |
 |  | Server: Nginx 1.27 Alpine           |                | Runtime: Python 3.11 Slim (FastAPI)   | |
-|  | Ports: 5173:80                      | -- /api/ --->  | Internal Port: 8000                   | |
+|  | Internal Port: 80                   | -- /api/ --->  | Internal Port: 8000                   | |
 |  | Static Assets: Vite React Build     |                | User: crewboard (UID 1000)            | |
 |  +-------------------------------------+                +---------------------------------------+ |
 |                                                                     |                             |
@@ -31,7 +31,7 @@ Crewboard executes as a multi-tier containerized stack orchestrated via Docker C
 |                                                         +---------------------------------------+ |
 |                                                         | Container: crewboard_db               | |
 |                                                         | Image: postgres:16-alpine             | |
-|                                                         | Port: 127.0.0.1:5432:5432 (Local dev) | |
+|                                                         | Port: 127.0.0.1:5432 (Local dev only) | |
 |                                                         +---------------------------------------+ |
 +---------------------------------------------------------------------|-----------------------------+
                                                                       |
@@ -39,13 +39,28 @@ Crewboard executes as a multi-tier containerized stack orchestrated via Docker C
                    | Persistent Named Volumes                                                 |
                    |                                                                          |
                    |  - crewboard_pgdata   --> /var/lib/postgresql/data (PostgreSQL Tables)  |
-                   |  - crewboard_uploads  --> /app/uploads (Student Deliverables)            |
+                   |  - crewboard_uploads  --> /app/uploads (0750 Student Deliverables)       |
+                   |  - crewboard_caddy_data --> /data (Let's Encrypt TLS Certificates)       |
                    +--------------------------------------------------------------------------+
 ```
 
 ---
 
-## 2. Service Specifications
+## 2. Container Registry Images (GHCR)
+
+Official container images are published to **GitHub Container Registry (GHCR)**:
+
+- **Backend**: `ghcr.io/sanjay-h-08/crewboard-backend:<tag>`
+- **Frontend**: `ghcr.io/sanjay-h-08/crewboard-frontend:<tag>`
+
+### Supported Tags
+- `latest`: Tracks the most recent production-verified release.
+- `vX.Y.Z`: Immutable semantic version tag (e.g., `v1.0.0`).
+- `sha-<hash>`: Immutable Git commit SHA reference for deterministic rollbacks.
+
+---
+
+## 3. Service Specifications
 
 ### A. Backend Service (`crewboard_backend`)
 - **Base Image**: `python:3.11-slim`
@@ -54,11 +69,12 @@ Crewboard executes as a multi-tier containerized stack orchestrated via Docker C
   - Purges build compilers post-installation to keep the final image minimal and secure.
   - Installs `curl` strictly for health checks.
   - Sets `PYTHONUNBUFFERED=1` and `PYTHONDONTWRITEBYTECODE=1`.
+  - Non-root user `crewboard` (UID 1000).
 - **Pre-Flight Entrypoint (`backend/entrypoint.sh`)**:
-  1. Ensures `/app/uploads` exists with writable permissions.
+  1. Enforces least-privilege `0750` permissions on `/app/uploads`.
   2. Executes an active Python loop checking database connectivity with retries up to 30 seconds.
   3. Applies pending database migrations via `alembic upgrade head`.
-  4. Launches `uvicorn app.main:app --host 0.0.0.0 --port 8000` via `exec "$@"`, guaranteeing that Uvicorn runs as PID 1 and receives OS shutdown signals (`SIGTERM`, `SIGINT`) cleanly.
+  4. Launches `uvicorn app.main:app --host 0.0.0.0 --port 8000` as non-root user (UID 1000) via `exec "$@"`.
 - **Health Check Probe**:
   - `CMD curl -f http://localhost:8000/api/health || exit 1`
   - Runs every 10 seconds; verifies database query execution.
@@ -86,9 +102,15 @@ Crewboard executes as a multi-tier containerized stack orchestrated via Docker C
   - `CMD-SHELL pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}`
   - Runs every 5 seconds.
 
+### D. Edge Gateway Service (`crewboard_caddy`)
+- **Base Image**: `caddy:2-alpine`
+- **Role**: Sole public entry point in production (binding ports `80` and `443`).
+- **TLS Automation**: Automatic certificate issuance and renewals via Let's Encrypt / ZeroSSL.
+- **Persistence**: Certificates and runtime state stored in `crewboard_caddy_data` and `crewboard_caddy_config`.
+
 ---
 
-## 3. Persistent Volume Safety Guarantees
+## 4. Persistent Volume Safety Guarantees
 
 The Crewboard Docker architecture guarantees total persistence across container rebuilds, image upgrades, and service restarts:
 
@@ -97,21 +119,23 @@ The Crewboard Docker architecture guarantees total persistence across container 
    - Survives `docker compose restart`, `docker compose stop`, `docker compose down`, and image updates.
 2. **`crewboard_uploads`**:
    - Stores submitted student deliverables, project slides, and rubric attachments.
-   - Mounted directly at `/app/uploads` in the backend container.
+   - Mounted directly at `/app/uploads` in the backend container with secure `0750` permissions.
+3. **`crewboard_caddy_data`**:
+   - Stores TLS certificates, keys, and ACME challenge records.
 
 > [!CAUTION]
 > **Data Safety Rule**: Never execute `docker compose down -v` or `docker volume rm crewboard_pgdata crewboard_uploads` on an environment with active or demo data. Volume destruction irreversibly deletes the PostgreSQL database and deliverables.
 
 ---
 
-## 4. Development vs. Production Configurations
+## 5. Development vs. Production Configurations
 
-### Development / Unified Configuration (`docker-compose.yml`)
+### Development Configuration (`docker-compose.yml` + `docker-compose.override.yml`)
 - Provides host port bindings for direct debugging:
   - Frontend: `http://localhost:5173`
   - Backend API: `http://localhost:8000`
   - Database: `127.0.0.1:5432` (accessible via `psql` or database clients)
-- Used by `./crewboard.fish`.
+- Images built locally: `crewboard-backend:local`, `crewboard-frontend:local`.
 
 ### Production Configuration (`docker-compose.prod.yml`)
 - Applied on top of the base compose file:
@@ -121,32 +145,23 @@ The Crewboard Docker architecture guarantees total persistence across container 
 - **Changes in Production**:
   - Database, backend, and frontend host ports are **completely unmapped** from the host; zero direct external access.
   - A containerized **Caddy 2** edge reverse proxy binds host ports `80` and `443` as the sole public gateway.
-  - Caddy automatically provisions and renews Let's Encrypt TLS certificates, stored in the persistent volume `crewboard_caddy_data`.
-  - Sets `ENVIRONMENT=production`, triggering strict runtime verification (rejects default secrets).
-  - Configures JSON log rotation (`max-size: 20m`, `max-file: 5`) to prevent disk exhaustion.
+  - Pulls pre-built images from GHCR (`BACKEND_IMAGE` and `FRONTEND_IMAGE` environment variables).
+  - Configures JSON log rotation (`max-size: 20m`, `max-file: 5`) across all containers (`caddy`, `backend`, `frontend`, `db`).
   - Restart policy elevated to `always`.
 
 ---
 
-## 5. Life-Cycle Management with `crewboard.fish`
+## 6. Operations & Lifecycle Scripts
 
-Crewboard includes a one-command management runner (`crewboard.fish`) that handles all Docker operations safely:
+Crewboard provides production operations scripts under `scripts/`:
 
 ```bash
-# Start all containers with health check verification
-./crewboard.fish start
+# Automated deployment with pre-flight backup and health verification
+./scripts/deploy.sh v1.0.0 sanjay-h-08
 
-# Check live container status, memory and health probes
-./crewboard.fish status
+# Instant safe rollback to previously recorded deployment
+./scripts/rollback.sh
 
-# View streaming logs
-./crewboard.fish logs backend
-./crewboard.fish logs frontend
-./crewboard.fish logs db
-
-# Gracefully stop containers without touching volumes
-./crewboard.fish stop
-
-# Rebuild containers from scratch without data loss
-./crewboard.fish rebuild
+# Compressed, timestamped PostgreSQL backup with 14-day retention
+./scripts/backup.sh /opt/crewboard/backups
 ```

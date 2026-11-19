@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { AuthProvider } from './context/AuthContext';
 import { TeamProvider } from './context/TeamContext';
 import { useAuth } from './context/AuthContext';
@@ -29,37 +30,39 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <TeamProvider>
-            <Routes>
-              {/* Public Auth Routes */}
-              <Route path="/login" element={<AuthPage initialMode="login" />} />
-              <Route path="/register" element={<AuthPage initialMode="register" />} />
+            <NotificationProvider>
+              <Routes>
+                {/* Public Auth Routes */}
+                <Route path="/login" element={<AuthPage initialMode="login" />} />
+                <Route path="/register" element={<AuthPage initialMode="register" />} />
 
-              {/* Protected Application Routes wrapped in AppLayout */}
-              <Route
-                element={
-                  <ProtectedRoute>
-                    <AppLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
+                {/* Protected Application Routes wrapped in AppLayout */}
                 <Route
-                  path="/teacher"
                   element={
-                    <TeacherRoute>
-                      <TeacherDashboardPage />
-                    </TeacherRoute>
+                    <ProtectedRoute>
+                      <AppLayout />
+                    </ProtectedRoute>
                   }
-                />
-                <Route path="/my-tasks" element={<MyTasksPage />} />
-                <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
-                <Route path="/teams/:teamId" element={<TeamOverviewPage />} />
-              </Route>
+                >
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route
+                    path="/teacher"
+                    element={
+                      <TeacherRoute>
+                        <TeacherDashboardPage />
+                      </TeacherRoute>
+                    }
+                  />
+                  <Route path="/my-tasks" element={<MyTasksPage />} />
+                  <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
+                  <Route path="/teams/:teamId" element={<TeamOverviewPage />} />
+                </Route>
 
-              {/* Fallback Catch-all Route */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
+                {/* Fallback Catch-all Route */}
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </NotificationProvider>
           </TeamProvider>
         </AuthProvider>
       </ThemeProvider>
